@@ -1,0 +1,21 @@
+# .clangd
+CompileFlags:
+  Add:
+    # 1. Force C++23 globally
+    - -std=c++23
+    - -stdlib=libstdc++
+    - -Wall
+    - -fprebuilt-module-path=build
+
+  Compiler: clang++
+
+# 4. Force .cppm files to be treated as Module Interfaces
+# (Fixes "Unknown type name 'module'" errors)
+---
+If:
+  PathMatch: .*\.cppm
+
+CompileFlags:
+  Add:
+    - -x
+    - c++-module
