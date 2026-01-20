@@ -5,7 +5,7 @@ module;
 #include <system_error>
 #include <format>
 
-export module rio.utils:result;
+export module rio:utils.result;
 
 namespace rio {
 

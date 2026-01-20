@@ -1,57 +1,57 @@
 [
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/utils/assert.cppm -o build/rio.utils-assert.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/utils/assert.cppm -o build/rio-utils.assert.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/utils/assert.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/utils/result.cppm -o build/rio.utils-result.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/utils/result.cppm -o build/rio-utils.result.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/utils/result.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/utils/utils.cppm -o build/rio.utils.pcm -fmodule-file=rio.utils:assert=build/rio.utils-assert.pcm -fmodule-file=rio.utils:result=build/rio.utils-result.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/utils/utils.cppm -o build/rio-utils.pcm -fmodule-file=rio:utils.assert=build/rio-utils.assert.pcm -fmodule-file=rio:utils.result=build/rio-utils.result.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/utils/utils.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/sockets/address.cppm -o build/rio.socket-address.pcm -fmodule-file=rio.utils=build/rio.utils.pcm -fmodule-file=rio.utils:assert=build/rio.utils-assert.pcm -fmodule-file=rio.utils:result=build/rio.utils-result.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/sockets/address.cppm -o build/rio-socket.address.pcm -fmodule-file=rio:utils=build/rio-utils.pcm -fmodule-file=rio:utils.assert=build/rio-utils.assert.pcm -fmodule-file=rio:utils.result=build/rio-utils.result.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/sockets/address.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/handle.cppm -o build/rio.handle.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/handle.cppm -o build/rio-handle.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/handle.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/sockets/tcp_socket.cppm -o build/rio.socket-tcp_socket.pcm -fmodule-file=rio.handle=build/rio.handle.pcm -fmodule-file=rio.socket:address=build/rio.socket-address.pcm -fmodule-file=rio.utils=build/rio.utils.pcm -fmodule-file=rio.utils:assert=build/rio.utils-assert.pcm -fmodule-file=rio.utils:result=build/rio.utils-result.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/sockets/tcp_socket.cppm -o build/rio-socket.tcp_socket.pcm -fmodule-file=rio:handle=build/rio-handle.pcm -fmodule-file=rio:socket.address=build/rio-socket.address.pcm -fmodule-file=rio:utils=build/rio-utils.pcm -fmodule-file=rio:utils.assert=build/rio-utils.assert.pcm -fmodule-file=rio:utils.result=build/rio-utils.result.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/sockets/tcp_socket.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/socket.cppm -o build/rio.socket.pcm -fmodule-file=rio.handle=build/rio.handle.pcm -fmodule-file=rio.socket:address=build/rio.socket-address.pcm -fmodule-file=rio.socket:tcp_socket=build/rio.socket-tcp_socket.pcm -fmodule-file=rio.utils=build/rio.utils.pcm -fmodule-file=rio.utils:assert=build/rio.utils-assert.pcm -fmodule-file=rio.utils:result=build/rio.utils-result.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/socket.cppm -o build/rio-socket.pcm -fmodule-file=rio:handle=build/rio-handle.pcm -fmodule-file=rio:socket.address=build/rio-socket.address.pcm -fmodule-file=rio:socket.tcp_socket=build/rio-socket.tcp_socket.pcm -fmodule-file=rio:utils=build/rio-utils.pcm -fmodule-file=rio:utils.assert=build/rio-utils.assert.pcm -fmodule-file=rio:utils.result=build/rio-utils.result.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/socket.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/file.cppm -o build/rio.file.pcm -fmodule-file=rio.handle=build/rio.handle.pcm -fmodule-file=rio.utils=build/rio.utils.pcm -fmodule-file=rio.utils:assert=build/rio.utils-assert.pcm -fmodule-file=rio.utils:result=build/rio.utils-result.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/file.cppm -o build/rio-file.pcm -fmodule-file=rio:handle=build/rio-handle.pcm -fmodule-file=rio:utils=build/rio-utils.pcm -fmodule-file=rio:utils.assert=build/rio-utils.assert.pcm -fmodule-file=rio:utils.result=build/rio-utils.result.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/file.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/context.cppm -o build/rio.context.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/context.cppm -o build/rio-context.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/context.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/io/io.cppm -o build/rio.io.pcm -fmodule-file=rio.file=build/rio.file.pcm -fmodule-file=rio.handle=build/rio.handle.pcm -fmodule-file=rio.utils=build/rio.utils.pcm -fmodule-file=rio.utils:assert=build/rio.utils-assert.pcm -fmodule-file=rio.utils:result=build/rio.utils-result.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/io/io.cppm -o build/rio-io.pcm -fmodule-file=rio:file=build/rio-file.pcm -fmodule-file=rio:handle=build/rio-handle.pcm -fmodule-file=rio:utils=build/rio-utils.pcm -fmodule-file=rio:utils.assert=build/rio-utils.assert.pcm -fmodule-file=rio:utils.result=build/rio-utils.result.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/io/io.cppm"
   },
   {
     "directory": "/home/geek/Documents/extra/prod/asio/.",
-    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/rio.cppm -o build/rio.pcm -fmodule-file=rio.context=build/rio.context.pcm -fmodule-file=rio.file=build/rio.file.pcm -fmodule-file=rio.handle=build/rio.handle.pcm -fmodule-file=rio.io=build/rio.io.pcm -fmodule-file=rio.socket=build/rio.socket.pcm -fmodule-file=rio.socket:address=build/rio.socket-address.pcm -fmodule-file=rio.socket:tcp_socket=build/rio.socket-tcp_socket.pcm -fmodule-file=rio.utils=build/rio.utils.pcm -fmodule-file=rio.utils:assert=build/rio.utils-assert.pcm -fmodule-file=rio.utils:result=build/rio.utils-result.pcm",
+    "command": "g++ clang++ -std=c++23 -Wall -Wextra -O2 --precompile src/rio.cppm -o build/rio.pcm -fmodule-file=rio:context=build/rio-context.pcm -fmodule-file=rio:file=build/rio-file.pcm -fmodule-file=rio:handle=build/rio-handle.pcm -fmodule-file=rio:io=build/rio-io.pcm -fmodule-file=rio:socket=build/rio-socket.pcm -fmodule-file=rio:socket.address=build/rio-socket.address.pcm -fmodule-file=rio:socket.tcp_socket=build/rio-socket.tcp_socket.pcm -fmodule-file=rio:utils=build/rio-utils.pcm -fmodule-file=rio:utils.assert=build/rio-utils.assert.pcm -fmodule-file=rio:utils.result=build/rio-utils.result.pcm",
     "file": "/home/geek/Documents/extra/prod/asio/src/rio.cppm"
   }
 ]

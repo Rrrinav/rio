@@ -1,4 +1,4 @@
-export module rio.utils;
+export module rio:utils;
 
-export import :result;
-export import :assert;
+export import :utils.result;
+export import :utils.assert;

@@ -4,7 +4,7 @@ module;
 #include <stdexcept>
 #include <format>
 
-export module rio.context;
+export module rio:context;
 
 namespace rio {
 

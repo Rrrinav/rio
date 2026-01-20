@@ -8,12 +8,12 @@ module;
 
 export module rio;
 
-export import rio.io;
-export import rio.utils;
-export import rio.handle;
-export import rio.file;
-export import rio.socket;
-export import rio.context;
+export import :io;
+export import :utils;
+export import :handle;
+export import :file;
+export import :socket;
+export import :context;
 
 namespace rio {
 export auto kill(rio::handle &h) -> void

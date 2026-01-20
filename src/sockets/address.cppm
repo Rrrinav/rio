@@ -6,8 +6,8 @@ module;
 #include <expected>
 #include <format>
 
-export module rio.socket:address;
-import rio.utils;
+export module rio:socket.address;
+import :utils;
 
 namespace rio {
 

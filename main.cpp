@@ -6,7 +6,6 @@ import rio;
 
 int main()
 {
-    rio::context foo{1};
     auto res = rio::file::open("./build.sh", rio::f_mode::read_only);
 
     if (!res)

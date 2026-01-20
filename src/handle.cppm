@@ -6,7 +6,7 @@ module;
 #include <sys/ioctl.h>
 #include <linux/fs.h>
 
-export module rio.handle;
+export module rio:handle;
 
 namespace rio {
 

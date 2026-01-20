@@ -5,7 +5,7 @@ module;
 #include <print>
 #include <cstdlib>
 
-export module rio.utils:assert;
+export module rio:utils.assert;
 
 namespace rio::assrt
 {

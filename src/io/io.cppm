@@ -9,9 +9,9 @@ module;
 #include <linux/fs.h>
 #include <cerrno>
 
-export module rio.io;
+export module rio:io;
 
-import rio.file;
+import :file;
 
 export namespace rio::io {
 

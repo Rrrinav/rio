@@ -8,10 +8,10 @@ module;
 #include <expected>
 #include <format>
 
-export module rio.file;
+export module rio:file;
 
-import rio.handle;
-import rio.utils;
+import :handle;
+import :utils;
 
 namespace rio
 {

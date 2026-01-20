@@ -11,12 +11,12 @@ module;
 #include <cerrno>
 #include <format>
 
-export module rio.socket:tcp_socket;
-import :address;
+export module rio:socket.tcp_socket;
+import :socket.address;
 
 
-import rio.handle;
-import rio.utils;
+import :handle;
+import :utils;
 
 namespace rio {
 

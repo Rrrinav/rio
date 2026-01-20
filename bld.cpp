@@ -27,17 +27,17 @@ struct module_info
 
 // --- Module Registry ---
 std::vector<module_info> modules = {
-    {"rio.utils:assert",              Src + "utils/assert.cppm",               {}},
-    {"rio.utils:result",              Src + "utils/result.cppm",               {}},
-    {"rio.utils",                     Src + "utils/utils.cppm",                {"rio.utils:assert", "rio.utils:result"}},
-    {"rio.socket:address",            Src + "sockets/address.cppm",            {"rio.utils"}},
-    {"rio.socket:tcp_socket",         Src + "sockets/tcp_socket.cppm",         {"rio.socket:address", "rio.utils", "rio.handle"}},
-    {"rio.socket",                    Src + "socket.cppm",                     {"rio.socket:address", "rio.socket:tcp_socket", "rio.utils"}},
-    {"rio.handle",                    Src + "handle.cppm",                     {}},
-    {"rio.file",                      Src + "file.cppm",                       {"rio.utils", "rio.handle"}},
-    {"rio.context",                   Src + "context.cppm",                    {}},
-    {"rio.io",                        Src + "io/io.cppm",                      {"rio.utils", "rio.file"}},
-    {"rio",                           Src + "rio.cppm",                        {"rio.utils", "rio.io", "rio.file", "rio.context", "rio.socket"}}
+    {"rio:utils.assert",              Src + "utils/assert.cppm",               {}},
+    {"rio:utils.result",              Src + "utils/result.cppm",               {}},
+    {"rio:utils",                     Src + "utils/utils.cppm",                {"rio:utils.assert", "rio:utils.result"}},
+    {"rio:socket.address",            Src + "sockets/address.cppm",            {"rio:utils"}},
+    {"rio:socket.tcp_socket",         Src + "sockets/tcp_socket.cppm",         {"rio:socket.address", "rio:utils", "rio:handle"}},
+    {"rio:socket",                    Src + "socket.cppm",                     {"rio:socket.address", "rio:socket.tcp_socket", "rio:utils"}},
+    {"rio:handle",                    Src + "handle.cppm",                     {}},
+    {"rio:file",                      Src + "file.cppm",                       {"rio:utils", "rio:handle"}},
+    {"rio:context",                   Src + "context.cppm",                    {}},
+    {"rio:io",                        Src + "io/io.cppm",                      {"rio:utils", "rio:file"}},
+    {"rio",                           Src + "rio.cppm",                        {"rio:utils", "rio:io", "rio:file", "rio:context", "rio:socket"}}
 };
 
 // --- Helpers ---
@@ -211,8 +211,7 @@ int main(int argc, char *argv[])
         // Add all module objects
         for (const auto &mod : build_order) link_cmd.push_back(to_path(mod.name, ".o"));
 
-        // Add module mapping for the main.cpp so it can find 'import rio'
-        for (const auto &mod : build_order) link_cmd.push_back("-fmodule-file=" + mod.name + "=" + to_path(mod.name, ".pcm"));
+        link_cmd.push_back("-fprebuilt-module-path=build/");
 
         // Add system libraries (like io_uring)
         link_cmd.push_back("-luring");

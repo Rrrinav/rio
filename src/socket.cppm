@@ -1,5 +1,5 @@
 module;
 
-export module rio.socket;
-export import :tcp_socket;
-export import :address;
+export module rio:socket;
+export import :socket.tcp_socket;
+export import :socket.address;
