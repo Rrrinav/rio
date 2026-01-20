@@ -152,6 +152,7 @@ int main(int argc, char *argv[])
         std::set<std::string> all_deps;
         collect_deps(mod.name, dep_map, all_deps);
         for (const auto &d : all_deps) pc_cmd.push_back("-fmodule-file=" + d + "=" + to_path(d, ".pcm"));
+        pc_cmd.push_back("-fprebuilt-module-path=build/");
 
         // Capture for LSP
         std::string full_cmd_str = cfg.compiler;
@@ -176,6 +177,7 @@ int main(int argc, char *argv[])
             obj_cmd.push_back(pcm);
             obj_cmd.push_back("-o");
             obj_cmd.push_back(obj);
+            obj_cmd.push_back("-fprebuilt-module-path=build/");
             // Objects also need the module mapping
             for (const auto &d : all_deps) obj_cmd.push_back("-fmodule-file=" + d + "=" + to_path(d, ".pcm"));
 
@@ -188,7 +190,7 @@ int main(int argc, char *argv[])
 
     emit_compile_commands(".", json_cmds, json_files);
     // 4. Final Linking Stage
-    std::string executable = Src + "rio";
+    std::string executable = Build + "rio";
     std::string main_source = "main.cpp";  // Your entry point
 
     // Check if we need to relink (if any object file or main.cpp is newer than the binary)

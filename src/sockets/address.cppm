@@ -4,6 +4,7 @@ module;
 #include <arpa/inet.h>
 #include <cerrno>
 #include <expected>
+#include <string>
 #include <format>
 
 export module rio:socket.address;
@@ -13,7 +14,8 @@ namespace rio {
 
 export struct address
 {
-    union storage_t {
+    union storage_t
+    {
         sockaddr general;
         sockaddr_in v4;
         sockaddr_in6 v6;
@@ -35,7 +37,10 @@ export struct address
         addr.storage.v4.sin_port = htons(port);
         addr.len = sizeof(sockaddr_in);
 
-        if (::inet_pton(AF_INET, ip, &addr.storage.v4.sin_addr) != 1) [[unlikely]]
+        std::string given_ip(ip);
+        std::string ip_str = (given_ip == "localhost") ? "127.0.0.1" : given_ip;
+
+        if (::inet_pton(AF_INET, ip_str.c_str(), &addr.storage.v4.sin_addr) != 1) [[unlikely]]
             return std::unexpected(Err{EINVAL, std::format("Invalid IPv4 address: '{}'", ip)});
 
         return addr;
@@ -74,7 +79,10 @@ export struct address
         addr.storage.v6.sin6_port = htons(port);
         addr.len = sizeof(sockaddr_in6);
 
-        if (::inet_pton(AF_INET6, ip, &addr.storage.v6.sin6_addr) != 1) [[unlikely]]
+        std::string given_ip(ip);
+        std::string ip_str = (given_ip == "localhost") ? "::1" : given_ip;
+
+        if (::inet_pton(AF_INET6, ip_str.c_str(), &addr.storage.v6.sin6_addr) != 1) [[unlikely]]
             return std::unexpected(Err{EINVAL, std::format("Invalid IPv6 address: '{}'", ip)});
 
         return addr;
@@ -107,6 +115,12 @@ export struct address
     [[nodiscard]]
     static auto from_ip(const char *ip, uint16_t port) -> result<address>
     {
+        std::string given_ip(ip);
+
+        // Handle "localhost" - default to IPv4 for compatibility
+        if (given_ip == "localhost")
+            return from_ipv4("127.0.0.1", port);
+
         // Try IPv4 first (more common, faster)
         address addr;
         addr.storage.v4.sin_family = AF_INET;

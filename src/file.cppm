@@ -13,8 +13,7 @@ export module rio:file;
 import :handle;
 import :utils;
 
-namespace rio
-{
+namespace rio {
 
 export enum class f_mode : int
 {
