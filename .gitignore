@@ -1,4 +1,10 @@
 build
+build/
+bin/
+modules/
+std/
+std
 .cache
 bld
+bld.old
 rio_bin

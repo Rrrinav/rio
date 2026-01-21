@@ -1,4 +1,6 @@
 #include <iostream>
+#include <print>
+#include <source_location>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -14,9 +16,10 @@
 namespace fs = std::filesystem;
 
 // --- Configuration ---
-const std::vector<std::string> Flags = {"-std=c++23", "-Wall", "-Wextra", "-O2"};
-const std::string Src = "src/";
-const std::string Build = "build/";
+const std::vector<std::string> Flags = {"-std=c++23", "-Wall", "-Wextra", "-O2", "-stdlib=libc++", "-fprebuilt-module-path=build/",  "-fprebuilt-module-path=std/"};
+const std::string Src                = "src/";
+const std::string Build              = "build/";
+const std::string Std_mod_dir        = "std/";
 
 struct module_info
 {
@@ -47,6 +50,38 @@ std::string to_path(std::string name, const std::string &ext)
     std::replace(name.begin(), name.end(), ':', '-');
     return Build + name + ext;
 }
+
+bool build_module_std()
+{
+    if (std::filesystem::exists(Std_mod_dir + "std.pcm") && std::filesystem::exists(Std_mod_dir + "std.pcm")) return true;
+
+    bld::Command cmd = {"find", "/usr", "-type", "f", "-name", "std.cppm"};
+    [[maybe_unused]] std::source_location loc = std::source_location::current();
+    // Hardcode value here
+    std::string std_cppm_loc{};
+    // Will short-circuit if value is provided.
+    if (std_cppm_loc.size() < 1 && !bld::read_process_output(cmd, std_cppm_loc))
+    {
+        bld::log(bld::Log_type::ERR, "Error finding path of libc++ std mdoule (std.cppm), you may have to build it yourself using clang.");
+        std::println(std::cerr, "       Use command: `clang++ -std=c++23 -stdlib=libc++ --precompile -o {}std.pcm path/to/std.cppm`", Std_mod_dir);
+        bld::log(bld::Log_type::WARNING, "Could be due to root permission issue since I am usind find command in /usr");
+        return false;
+    }
+    if (std_cppm_loc.length() < 1)
+    {
+        bld::log(bld::Log_type::ERR, "Error finding path of libc++ std mdoule (std.cppm)");
+        std::println(std::cerr, "       Go to location: {}:{} and hardcode std.cppm location.", loc.file_name(), loc.line(), Std_mod_dir);
+        return false;
+    }
+    cmd.parts.clear();
+    auto final_path = bld::str::trim(std_cppm_loc);
+    auto final_compat_path = final_path.substr(0, final_path.size() - std::string("std.pcm").size() - 1) + "std.compat.cppm";
+    cmd.parts = { "clang++", "-std=c++23", "-stdlib=libc++", "--precompile", "-o", Std_mod_dir + "std.pcm", final_path};
+    if (!bld::execute(cmd)) return false;
+    cmd.parts = { "clang++", "-std=c++23", "-stdlib=libc++", "--precompile", "-o", Std_mod_dir + "std.compat.pcm", final_compat_path, "-fprebuilt-module-path=std" };
+    if (!bld::execute(cmd)) return false;
+    return true;
+};
 
 void collect_deps(const std::string &name, const std::map<std::string, std::vector<std::string>> &map, std::set<std::string> &out)
 {
@@ -125,6 +160,8 @@ int main(int argc, char *argv[])
     auto &cfg = bld::Config::get();
     BLD_HANDLE_ARGS();
 
+    if(!build_module_std()) return 1;
+
     if (!fs::exists(Build))
         fs::create_directory(Build);
 
@@ -188,7 +225,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    emit_compile_commands(".", json_cmds, json_files);
+    //emit_compile_commands(".", json_cmds, json_files);
     // 4. Final Linking Stage
     std::string executable = Build + "rio";
     std::string main_source = "main.cpp";  // Your entry point
@@ -214,6 +251,7 @@ int main(int argc, char *argv[])
         for (const auto &mod : build_order) link_cmd.push_back(to_path(mod.name, ".o"));
 
         link_cmd.push_back("-fprebuilt-module-path=build/");
+        link_cmd.push_back("-fprebuilt-module-path=std/");
 
         // Add system libraries (like io_uring)
         link_cmd.push_back("-luring");

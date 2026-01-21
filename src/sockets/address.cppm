@@ -3,12 +3,11 @@ module;
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <cerrno>
-#include <expected>
-#include <string>
-#include <format>
 
 export module rio:socket.address;
-import :utils;
+import :utils.result;
+
+import std;
 
 namespace rio {
 

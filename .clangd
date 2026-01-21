@@ -3,9 +3,10 @@ CompileFlags:
   Add:
     # 1. Force C++23 globally
     - -std=c++23
-    - -stdlib=libstdc++
+    - -stdlib=libc++
     - -Wall
-    - -fprebuilt-module-path=build
+    - -fprebuilt-module-path=build/
+    - -fprebuilt-module-path=std/
 
   Compiler: clang++
 

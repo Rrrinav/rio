@@ -1,11 +1,7 @@
 module;
-
-#include <string_view>
-#include <source_location>
-#include <print>
-#include <cstdlib>
-
 export module rio:utils.assert;
+
+import std;
 
 namespace rio::assrt
 {
@@ -13,7 +9,7 @@ namespace rio::assrt
 // Helper: Internal linkage (not exported), keeps module clean
 void log(std::string_view msg, const std::source_location &loc)
 {
-    std::println(stderr, "\n{}:{}: [assert failed] {}", loc.file_name(), loc.line(), msg);
+    std::println(std::cerr, "\n{}:{}: [assert failed] {}", loc.file_name(), loc.line(), msg);
 }
 
 export inline auto that( bool condition, std::string_view msg = "Check failed", const std::source_location loc = std::source_location::current()) -> void

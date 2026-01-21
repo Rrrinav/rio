@@ -223,7 +223,7 @@ namespace bld
   // Redirection configuration
   struct Redirect
   {
-    Fd stdin_fd  = INVALID_FD;   // Redirect stdin from this fd
+    Fd stdin_fd  = INVALID_FD;  // Redirect stdin from this fd
     Fd stdout_fd = INVALID_FD;  // Redirect stdout to this fd
     Fd stderr_fd = INVALID_FD;  // Redirect stderr to this fd
 

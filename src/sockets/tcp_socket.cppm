@@ -1,23 +1,19 @@
 module;
 
 #include <fcntl.h>
-#include <utility>
-#include <cstdint>
-#include <expected>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cerrno>
-#include <format>
-#include <span>
-#include <tuple>
 
 export module rio:socket.tcp_socket;
 import :socket.address;
 import :handle;
 import :utils;
+
+import std;
 
 namespace rio {
 
@@ -71,8 +67,8 @@ export struct Tcp_socket
     static auto open(const rio::address &address, s_opt options) -> result<Tcp_socket>;
     static auto open(const char *ip, uint16_t port, s_opt options) -> result<std::tuple<Tcp_socket, rio::address>>;
 
-    static auto open_and_listen(const rio::address &address, s_opt options, int backlog = 128) -> result<Tcp_socket>;
-    static auto open_and_listen(const char *ip, uint16_t port, s_opt options, int backlog = 128) -> result<std::tuple<Tcp_socket, rio::address>>;
+    static auto open_and_listen(const rio::address &address, s_opt options = s_opt::sync_server_v4, int backlog = 128) -> result<Tcp_socket>;
+    static auto open_and_listen(const char *ip, uint16_t port, s_opt options= s_opt::sync_server_v4, int backlog = 128) -> result<std::tuple<Tcp_socket, rio::address>>;
 
     static auto attach(int raw_fd) -> Tcp_socket;
     explicit operator bool() const;

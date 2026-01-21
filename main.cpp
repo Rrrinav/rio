@@ -1,19 +1,17 @@
-#include <print>
-#include <span>
-#include <utility>
+import std;
+import std.compat;
 
 import rio;
 
 void accept_handler(rio::Tcp_socket sock, const rio::address& add)
 {
-
     std::println(" [RIO]: Accepted connection from {}", add);
     rio::io::write_all(sock, "Welcome to rio\r\n");
 
     char msg_buf[1024];
     std::span<char> span(msg_buf);
 
-    size_t n = rio::io::read(sock, span);
+    ::size_t n = rio::io::read(sock, span);
 
     if (n <= 0)
     {
@@ -22,6 +20,7 @@ void accept_handler(rio::Tcp_socket sock, const rio::address& add)
         return;
     }
 
+    rio::io::write(sock, "You sent: ");
     rio::io::write(sock, std::span<char>{msg_buf, n});
     rio::io::write(sock, "\r\n");
 
@@ -33,11 +32,12 @@ int main()
     rio::Tcp_socket sock{};
     rio::address addr;
 
-    auto sock_res = rio::Tcp_socket::open_and_listen("localhost", 9900, rio::s_opt::sync_server_v4);
+    //auto sock_res = rio::Tcp_socket::open_and_listen("localhost", 6969, rio::s_opt::sync_server_v4);
+    auto sock_res = rio::Tcp_socket::open_and_listen("localhost", 6969);
 
     if (!sock_res)
     {
-        std::println(stderr, "Socket creation failed: {}", sock_res.error());
+        std::println(std::cerr, "Socket creation failed: {}", sock_res.error());
         return 1;
     }
 
