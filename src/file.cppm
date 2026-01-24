@@ -52,7 +52,7 @@ auto file::open(const char *path, f_mode m) -> result<file>
 
     if (f == -1)
     {
-        return std::unexpected(Err{errno, std::format("Failed to open file:'{}'.", std::string(path))});
+        return std::unexpected(rio::Err::sys(std::format("Failed to open file:'{}'.", std::string(path))));
     }
 
     return file::attach(f);

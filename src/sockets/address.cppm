@@ -183,13 +183,15 @@ export struct address
 
         if (is_ipv4())
         {
-            ::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf));
+            if (!::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf)))
+                return "";
             return std::format("{}:{}", buf, ntohs(storage.v4.sin_port));
         }
 
         if (is_ipv6())
         {
-            ::inet_ntop(AF_INET6, &storage.v6.sin6_addr, buf, sizeof(buf));
+            if (!::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf)))
+                return "";
             return std::format("[{}]:{}", buf, ntohs(storage.v6.sin6_port));
         }
 

@@ -104,9 +104,8 @@ auto Tcp_socket::open(s_opt options) -> result<Tcp_socket>
     {
         if (::setsockopt(s, level, optname, &value, sizeof(value)) == -1)
         {
-            const int err = errno;
             ::close(s);
-            return std::unexpected(Err{err, std::format("Failed to set {}", opt_name)});
+            return std::unexpected(rio::Err::sys(std::format("Failed to set {}", opt_name)));
         }
         return {};
     };

@@ -1,114 +1,330 @@
-#include <iostream>
-#include <print>
-#include <source_location>
+#include <cstdlib>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <algorithm>
-#include <unordered_map>
 #include <set>
 #include <map>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 
 #define B_LDR_IMPLEMENTATION
 #include "b_ldr.hpp"
 
 namespace fs = std::filesystem;
 
-// --- Configuration ---
-const std::vector<std::string> Flags = {"-std=c++23", "-Wall", "-Wextra", "-O2", "-stdlib=libc++", "-fprebuilt-module-path=build/",  "-fprebuilt-module-path=std/"};
-const std::string Src                = "src/";
-const std::string Build              = "build/";
-const std::string Std_mod_dir        = "std/";
+struct Config
+{
+    const fs::path dir_src = "src/";
+    const fs::path dir_pcm = "bin/pcms/";
+    const fs::path dir_obj = "bin/objs/";
+    const fs::path dir_bin = "bin/";
+    const fs::path dir_std = "bin/std/";
+    const fs::path dir_libs = "bin/libs/";
 
-struct module_info
+    const std::string exe_name = "rio";
+    const std::string lib_static = "librio.a";
+    const std::string lib_shared = "librio.so";
+
+    const std::string main_src = "main.cpp";
+    const std::string compiler = "clang++";
+    const std::string archiver = "ar";
+
+    const std::vector<std::string> flags_common = {"-std=c++23", "-Wall", "-Wextra", "-O2", "-fPIC"};
+    const std::vector<std::string> flags_stdlib = {"-stdlib=libc++"};
+
+    std::vector<std::string> get_mod_flags() const
+    {
+        return {"-fprebuilt-module-path=" + dir_pcm.string() + "/", "-fprebuilt-module-path=" + dir_std.string() + "/"};
+    }
+};
+
+struct Module
 {
     std::string name;
-    std::string file;
+    fs::path file;
     std::vector<std::string> deps;
+
+    std::string safe_name() const
+    {
+        std::string s = name;
+        std::replace(s.begin(), s.end(), ':', '-');
+        return s;
+    }
+    fs::path pcm(const Config &cfg) const { return cfg.dir_pcm / (safe_name() + ".pcm"); }
+    fs::path obj(const Config &cfg) const { return cfg.dir_obj / (safe_name() + ".o"); }
 };
 
-// --- Module Registry ---
-std::vector<module_info> modules = {
-    {"rio:utils.assert",              Src + "utils/assert.cppm",               {}},
-    {"rio:utils.result",              Src + "utils/result.cppm",               {}},
-    {"rio:utils",                     Src + "utils/utils.cppm",                {"rio:utils.assert", "rio:utils.result"}},
-    {"rio:socket.address",            Src + "sockets/address.cppm",            {"rio:utils"}},
-    {"rio:socket.tcp_socket",         Src + "sockets/tcp_socket.cppm",         {"rio:socket.address", "rio:utils", "rio:handle"}},
-    {"rio:socket",                    Src + "socket.cppm",                     {"rio:socket.address", "rio:socket.tcp_socket", "rio:utils"}},
-    {"rio:handle",                    Src + "handle.cppm",                     {}},
-    {"rio:file",                      Src + "file.cppm",                       {"rio:utils", "rio:handle"}},
-    {"rio:context",                   Src + "context.cppm",                    {}},
-    {"rio:io",                        Src + "io/io.cppm",                      {"rio:utils", "rio:file"}},
-    {"rio",                           Src + "rio.cppm",                        {"rio:utils", "rio:io", "rio:file", "rio:context", "rio:socket"}}
-};
-
-// --- Helpers ---
-
-std::string to_path(std::string name, const std::string &ext)
+struct CompileCommand
 {
-    std::replace(name.begin(), name.end(), ':', '-');
-    return Build + name + ext;
+    std::string directory;
+    std::string command;
+    std::string file;
+};
+
+std::pair<bool, std::string> run_cmd(const std::vector<std::string> &parts, bool dry_run = false)
+{
+    std::string full_cmd_str;
+    for (const auto &p : parts) full_cmd_str += p + " ";
+
+    if (dry_run)
+        return {true, full_cmd_str};
+
+    bld::Command cmd;
+    cmd.parts = parts;
+    return {bld::execute(cmd), full_cmd_str};
 }
 
-bool build_module_std()
+bool is_outdated(const fs::path &src, const fs::path &target)
 {
-    if (std::filesystem::exists(Std_mod_dir + "std.pcm") && std::filesystem::exists(Std_mod_dir + "std.pcm")) return true;
+    if (!fs::exists(src))
+    {
+        bld::log(bld::Log_type::ERR, "Missing source: " + src.string());
+        exit(1);
+    }
+    return !fs::exists(target) || fs::last_write_time(src) > fs::last_write_time(target);
+}
 
-    bld::Command cmd = {"find", "/usr", "-type", "f", "-name", "std.cppm"};
-    [[maybe_unused]] std::source_location loc = std::source_location::current();
-    // Hardcode value here
-    std::string std_cppm_loc{};
-    // Will short-circuit if value is provided.
-    if (std_cppm_loc.size() < 1 && !bld::read_process_output(cmd, std_cppm_loc))
+void emit_json(const std::vector<CompileCommand> &cmds)
+{
+    std::ofstream out("compile_commands.json");
+    out << "[\n";
+    for (size_t i = 0; i < cmds.size(); ++i)
     {
-        bld::log(bld::Log_type::ERR, "Error finding path of libc++ std mdoule (std.cppm), you may have to build it yourself using clang.");
-        std::println(std::cerr, "       Use command: `clang++ -std=c++23 -stdlib=libc++ --precompile -o {}std.pcm path/to/std.cppm`", Std_mod_dir);
-        bld::log(bld::Log_type::WARNING, "Could be due to root permission issue since I am usind find command in /usr");
-        return false;
+        out << "  {\n";
+        out << "    \"directory\": \"" << fs::current_path().string() << "\",\n";
+        out << "    \"command\": \"" << cmds[i].command << "\",\n";
+        out << "    \"file\": \"" << fs::absolute(cmds[i].file).string() << "\"\n";
+        out << "  }" << (i == cmds.size() - 1 ? "" : ",") << "\n";
     }
-    if (std_cppm_loc.length() < 1)
+    out << "]\n";
+}
+
+const std::string CACHE_FILE = ".bld_std_path";
+
+std::optional<fs::path> find_safe(const fs::path &root, const std::string &filename)
+{
+    if (!fs::exists(root))
+        return std::nullopt;
+    auto opts = fs::directory_options::skip_permission_denied;
+    std::error_code ec;
+
+    fs::recursive_directory_iterator it(root, opts, ec);
+    fs::recursive_directory_iterator end;
+
+    for (; it != end; it.increment(ec))
     {
-        bld::log(bld::Log_type::ERR, "Error finding path of libc++ std mdoule (std.cppm)");
-        std::println(std::cerr, "       Go to location: {}:{} and hardcode std.cppm location.", loc.file_name(), loc.line(), Std_mod_dir);
-        return false;
+        if (ec)
+            continue;
+        const auto &entry = *it;
+        if (entry.is_directory())
+        {
+            std::string p = entry.path().string();
+            bool likely = (p.find("include") != std::string::npos || p.find("c++") != std::string::npos ||
+                           p.find("v1") != std::string::npos || p.find("share") != std::string::npos || p.find("lib") != std::string::npos);
+            if (!likely)
+            {
+                it.disable_recursion_pending();
+                continue;
+            }
+        }
+        if (entry.is_regular_file() && entry.path().filename() == filename)
+            return entry.path();
     }
-    cmd.parts.clear();
-    auto final_path = bld::str::trim(std_cppm_loc);
-    auto final_compat_path = final_path.substr(0, final_path.size() - std::string("std.pcm").size() - 1) + "std.compat.cppm";
-    cmd.parts = { "clang++", "-std=c++23", "-stdlib=libc++", "--precompile", "-o", Std_mod_dir + "std.pcm", final_path};
-    if (!bld::execute(cmd)) return false;
-    cmd.parts = { "clang++", "-std=c++23", "-stdlib=libc++", "--precompile", "-o", Std_mod_dir + "std.compat.pcm", final_compat_path, "-fprebuilt-module-path=std" };
-    if (!bld::execute(cmd)) return false;
+    return std::nullopt;
+}
+
+std::optional<fs::path> load_cache()
+{
+    if (fs::exists(CACHE_FILE))
+    {
+        std::ifstream in(CACHE_FILE);
+        std::string s;
+        if (std::getline(in, s) && fs::exists(s))
+            return fs::path(s);
+    }
+    return std::nullopt;
+}
+
+bool build_std_module(const Config &cfg)
+{
+    if (fs::exists(cfg.dir_std / "std.pcm"))
+        return true;
+
+    bld::log(bld::Log_type::INFO, "Building Standard Module...");
+    fs::path std_cppm;
+
+    if (auto cached = load_cache())
+    {
+        std_cppm = *cached;
+        bld::log(bld::Log_type::INFO, "Using cached path: " + std_cppm.string());
+    }
+    else
+    {
+        bld::log(bld::Log_type::INFO, "Searching for std.cppm...");
+        std::vector<fs::path> roots = {"/usr/share", "/usr/lib", "/usr/lib64", "/usr/include", "/usr/local/share", "/opt/homebrew", "/usr"};
+        for (const auto &r : roots)
+        {
+            if (auto found = find_safe(r, "std.cppm"))
+            {
+                std_cppm = *found;
+                break;
+            }
+        }
+    }
+
+    if (std_cppm.empty())
+    {
+        bld::log(bld::Log_type::WARNING, "Could not find 'std.cppm' automatically.");
+        std::cout << "Please enter the absolute path to 'std.cppm': ";
+        std::string input;
+        std::getline(std::cin, input);
+        if (input.size() >= 2 && input.front() == '"' && input.back() == '"')
+            input = input.substr(1, input.size() - 2);
+        size_t last = input.find_last_not_of(" \t\n\r");
+        if (last != std::string::npos)
+            input = input.substr(0, last + 1);
+
+        fs::path p(input);
+        if (fs::exists(p))
+        {
+            std_cppm = p;
+            std::ofstream out(CACHE_FILE);
+            out << std_cppm.string();
+        }
+        else
+        {
+            bld::log(bld::Log_type::ERR, "Invalid path. Aborting.");
+            return false;
+        }
+    }
+
+    std::vector<std::string> args = {cfg.compiler};
+    args.insert(args.end(), cfg.flags_common.begin(), cfg.flags_common.end());
+    args.insert(args.end(), cfg.flags_stdlib.begin(), cfg.flags_stdlib.end());
+
+    std::vector<std::string> cmd1 = args;
+    cmd1.insert(cmd1.end(), {"--precompile", std_cppm.string(), "-o", (cfg.dir_std / "std.pcm").string()});
+    if (!run_cmd(cmd1).first)
+        return false;
+
+    fs::path compat = std_cppm.parent_path() / "std.compat.cppm";
+    if (fs::exists(compat))
+    {
+        std::vector<std::string> cmd2 = args;
+        cmd2.push_back("-fprebuilt-module-path=" + cfg.dir_std.string() + "/");
+        cmd2.insert(cmd2.end(), {"--precompile", compat.string(), "-o", (cfg.dir_std / "std.compat.pcm").string()});
+        run_cmd(cmd2);
+    }
     return true;
-};
-
-void collect_deps(const std::string &name, const std::map<std::string, std::vector<std::string>> &map, std::set<std::string> &out)
-{
-    if (map.contains(name))
-    {
-        for (const auto &d : map.at(name))
-            if (out.insert(d).second)
-                collect_deps(d, map, out);
-    }
 }
 
-std::vector<module_info> get_build_order(const std::vector<module_info> &input)
+std::vector<Module> scan_modules(const Config &cfg)
 {
-    std::map<std::string, const module_info *> lookup;
+    std::vector<Module> modules;
+    auto walker = [&](bld::fs::Walk_fn_opt &opt) -> bool
+    {
+        if (!fs::is_regular_file(opt.path) || opt.path.extension() != ".cppm")
+            return true;
+        std::ifstream file(opt.path);
+        std::string raw_line;
+        Module mod;
+        mod.file = opt.path;
+        bool found = false, in_comment = false;
+        std::vector<std::string> raw_deps;
+        std::string primary;
+
+        while (std::getline(file, raw_line))
+        {
+            std::string clean;
+            clean.reserve(raw_line.size());
+            for (size_t i = 0; i < raw_line.size(); ++i)
+            {
+                if (in_comment)
+                {
+                    if (i + 1 < raw_line.size() && raw_line[i] == '*' && raw_line[i + 1] == '/')
+                    {
+                        in_comment = false;
+                        i++;
+                        clean += ' ';
+                    }
+                }
+                else
+                {
+                    if (i + 1 < raw_line.size() && raw_line[i] == '/' && raw_line[i + 1] == '/')
+                        break;
+                    else if (i + 1 < raw_line.size() && raw_line[i] == '/' && raw_line[i + 1] == '*')
+                    {
+                        in_comment = true;
+                        i++;
+                        clean += ' ';
+                    }
+                    else
+                        clean += raw_line[i];
+                }
+            }
+            if (clean.empty())
+                continue;
+            std::string_view line = clean;
+            size_t f = line.find_first_not_of(" \t");
+            if (f == std::string_view::npos)
+                continue;
+            line.remove_prefix(f);
+            if (line.starts_with("export"))
+            {
+                line.remove_prefix(6);
+                size_t n = line.find_first_not_of(" \t");
+                if (n != std::string_view::npos)
+                    line.remove_prefix(n);
+            }
+            bool is_m = line.starts_with("module"), is_i = line.starts_with("import");
+            if (is_m || is_i)
+            {
+                line.remove_prefix(6);
+                size_t s = line.find_first_not_of(" \t");
+                if (s == std::string_view::npos)
+                    continue;
+                line.remove_prefix(s);
+                size_t e = line.find_first_of(" \t;");
+                if (e == std::string_view::npos)
+                    continue;
+                std::string n(line.substr(0, e));
+                if (is_m)
+                {
+                    mod.name = n;
+                    found = true;
+                    size_t c = n.find(':');
+                    primary = (c != std::string::npos) ? n.substr(0, c) : n;
+                }
+                else if (is_i && !n.starts_with("std") && n != "std.compat")
+                    raw_deps.push_back(std::move(n));
+            }
+        }
+        if (found)
+        {
+            for (const auto &d : raw_deps) mod.deps.push_back(d.starts_with(':') ? primary + d : d);
+            modules.push_back(std::move(mod));
+        }
+        return true;
+    };
+    bld::fs::walk_directory(cfg.dir_src.string(), walker);
+    return modules;
+}
+
+std::vector<Module> sort_modules(const std::vector<Module> &input)
+{
+    std::map<std::string, const Module *> lookup;
     for (const auto &m : input) lookup[m.name] = &m;
-
-    std::vector<module_info> sorted;
-    std::set<std::string> visited;
-    std::set<std::string> temp;
-
+    std::vector<Module> sorted;
+    std::set<std::string> visited, temp;
     auto visit = [&](auto &&self, const std::string &name) -> void
     {
         if (visited.contains(name))
             return;
         if (temp.contains(name))
         {
-            bld::log(bld::Log_type::ERR, "Cycle detected: " + name);
+            bld::log(bld::Log_type::ERR, "Cycle: " + name);
             exit(1);
         }
         temp.insert(name);
@@ -120,149 +336,141 @@ std::vector<module_info> get_build_order(const std::vector<module_info> &input)
         temp.erase(name);
         visited.insert(name);
     };
-
     for (const auto &m : input) visit(visit, m.name);
     return sorted;
 }
 
-bool is_outdated(const std::string &source, const std::string &target)
-{
-    if (!fs::exists(source))
-    {
-        bld::log(bld::Log_type::ERR, "Missing source file: " + source);
-        exit(1);
-    }
-    if (!fs::exists(target))
-        return true;
-    return fs::last_write_time(source) > fs::last_write_time(target);
-}
-
-void emit_compile_commands(const std::string &directory, const std::vector<std::string> &commands, const std::vector<std::string> &files)
-{
-    std::ofstream out("compile_commands.json");
-    out << "[\n";
-    for (size_t i = 0; i < commands.size(); ++i)
-    {
-        out << "  {\n";
-        out << "    \"directory\": \"" << fs::absolute(directory).string() << "\",\n";
-        out << "    \"command\": \"" << commands[i] << "\",\n";
-        out << "    \"file\": \"" << fs::absolute(files[i]).string() << "\"\n";
-        out << "  }" << (i == commands.size() - 1 ? "" : ",") << "\n";
-    }
-    out << "]\n";
-}
-
 // --- Main ---
-
+auto &bld_cfg = bld::Config::get();
 int main(int argc, char *argv[])
 {
     BLD_REBUILD_YOURSELF_ONCHANGE();
-    auto &cfg = bld::Config::get();
     BLD_HANDLE_ARGS();
 
-    if(!build_module_std()) return 1;
+    Config cfg;
 
-    if (!fs::exists(Build))
-        fs::create_directory(Build);
-
-    std::map<std::string, std::vector<std::string>> dep_map;
-    for (const auto &m : modules) dep_map[m.name] = m.deps;
-
-    auto build_order = get_build_order(modules);
-
-    std::vector<std::string> json_cmds;
-    std::vector<std::string> json_files;
-
-    for (const auto &mod : build_order)
+    if (bld_cfg["clean"])
     {
-        std::string pcm = to_path(mod.name, ".pcm");
-        std::string obj = to_path(mod.name, ".o");
+        bld::fs::remove_dir(cfg.dir_bin);
+        return 0;
+    }
+    if (bld_cfg["run"])
+    {
+        std::string command = cfg.dir_bin.string() + cfg.exe_name;
+        std::system(command.c_str());
+        return 0;
+    }
 
-        // Prepare Precompile Command
-        std::vector<std::string> pc_cmd = {"clang++"};
-        for (auto &f : Flags) pc_cmd.push_back(f);
-        pc_cmd.push_back("--precompile");
-        pc_cmd.push_back(mod.file);
-        pc_cmd.push_back("-o");
-        pc_cmd.push_back(pcm);
+    fs::create_directories(cfg.dir_pcm);
+    fs::create_directories(cfg.dir_obj);
+    fs::create_directories(cfg.dir_std);
+    fs::create_directories(cfg.dir_bin);
+    fs::create_directories(cfg.dir_libs);
 
-        std::set<std::string> all_deps;
-        collect_deps(mod.name, dep_map, all_deps);
-        for (const auto &d : all_deps) pc_cmd.push_back("-fmodule-file=" + d + "=" + to_path(d, ".pcm"));
-        pc_cmd.push_back("-fprebuilt-module-path=build/");
+    if (!build_std_module(cfg))
+        return 1;
 
-        // Capture for LSP
-        std::string full_cmd_str = cfg.compiler;
-        for (auto &part : pc_cmd)
-            if (part != cfg.compiler)
-                full_cmd_str += " " + part;
-        json_cmds.push_back(full_cmd_str);
-        json_files.push_back(mod.file);
+    auto modules = sort_modules(scan_modules(cfg));
+    bool link_needed = false;
+    std::vector<CompileCommand> json_entries;
 
-        // Build if outdated
-        if (is_outdated(mod.file, pcm))
+    // 1. Build Modules
+    for (const auto &mod : modules)
+    {
+        fs::path pcm = mod.pcm(cfg);
+        fs::path obj = mod.obj(cfg);
+        bool build = is_outdated(mod.file, pcm);
+
+        // A. Precompile
+        std::vector<std::string> cmd_pcm = {cfg.compiler};
+        cmd_pcm.insert(cmd_pcm.end(), cfg.flags_common.begin(), cfg.flags_common.end());
+        cmd_pcm.insert(cmd_pcm.end(), cfg.flags_stdlib.begin(), cfg.flags_stdlib.end());
+        cmd_pcm.push_back("--precompile");
+        cmd_pcm.push_back(mod.file.string());
+        cmd_pcm.push_back("-o");
+        cmd_pcm.push_back(pcm.string());
+        auto paths = cfg.get_mod_flags();
+        cmd_pcm.insert(cmd_pcm.end(), paths.begin(), paths.end());
+
+        auto res_pcm = run_cmd(cmd_pcm, !build);
+        json_entries.push_back({cfg.dir_src.string(), res_pcm.second, mod.file.string()});
+        if (!res_pcm.first)
+            return 1;
+
+        // B. Compile Object
+        std::vector<std::string> cmd_obj = {cfg.compiler};
+        cmd_obj.insert(cmd_obj.end(), cfg.flags_common.begin(), cfg.flags_common.end());
+        cmd_obj.push_back("-c");
+        cmd_obj.push_back(pcm.string());
+        cmd_obj.push_back("-o");
+        cmd_obj.push_back(obj.string());
+        cmd_obj.insert(cmd_obj.end(), paths.begin(), paths.end());
+
+        if (build)
         {
-            bld::log(bld::Log_type::INFO, "Building: " + mod.name);
-            bld::Command cmd;
-            cmd.parts = pc_cmd;
-            if (!bld::execute(cmd))
+            bld::log(bld::Log_type::INFO, "Compiling: " + mod.name);
+            if (!run_cmd(cmd_obj).first)
                 return 1;
-
-            std::vector<std::string> obj_cmd = {"clang++"};
-            for (auto &f : Flags) obj_cmd.push_back(f);
-            obj_cmd.push_back("-c");
-            obj_cmd.push_back(pcm);
-            obj_cmd.push_back("-o");
-            obj_cmd.push_back(obj);
-            obj_cmd.push_back("-fprebuilt-module-path=build/");
-            // Objects also need the module mapping
-            for (const auto &d : all_deps) obj_cmd.push_back("-fmodule-file=" + d + "=" + to_path(d, ".pcm"));
-
-            cmd.parts = obj_cmd;
-
-            if (!bld::execute(cmd))
-                return 1;
+            link_needed = true;
         }
     }
 
-    //emit_compile_commands(".", json_cmds, json_files);
-    // 4. Final Linking Stage
-    std::string executable = Build + "rio";
-    std::string main_source = "main.cpp";  // Your entry point
-
-    // Check if we need to relink (if any object file or main.cpp is newer than the binary)
-    bool need_relink = is_outdated(main_source, executable);
-    for (const auto &mod : modules)
-        if (is_outdated(to_path(mod.name, ".o"), executable))
-            need_relink = true;
-
-    if (need_relink)
+    fs::path static_lib = cfg.dir_libs / cfg.lib_static;
+    if (link_needed || !fs::exists(static_lib))
     {
-        bld::log(bld::Log_type::INFO, "Linking final executable: " + executable);
-
-        std::vector<std::string> link_cmd = {"clang++"};
-        for (auto &f : Flags) link_cmd.push_back(f);
-
-        link_cmd.push_back(main_source);
-        link_cmd.push_back("-o");
-        link_cmd.push_back(executable);
-
-        // Add all module objects
-        for (const auto &mod : build_order) link_cmd.push_back(to_path(mod.name, ".o"));
-
-        link_cmd.push_back("-fprebuilt-module-path=build/");
-        link_cmd.push_back("-fprebuilt-module-path=std/");
-
-        // Add system libraries (like io_uring)
-        link_cmd.push_back("-luring");
-
-        bld::Command cmd;
-        cmd.parts = link_cmd;
-
-        if (!bld::execute(cmd))
+        bld::log(bld::Log_type::INFO, "Archiving: " + cfg.lib_static);
+        std::vector<std::string> cmd_ar = {cfg.archiver, "rcs", static_lib.string()};
+        for (const auto &m : modules) cmd_ar.push_back(m.obj(cfg).string());
+        if (!run_cmd(cmd_ar).first)
             return 1;
     }
-    bld::log(bld::Log_type::INFO, "Build complete. compile_commands.json generated.");
 
+    fs::path shared_lib = cfg.dir_libs / cfg.lib_shared;
+    if (link_needed || !fs::exists(shared_lib))
+    {
+        bld::log(bld::Log_type::INFO, "Linking Shared: " + cfg.lib_shared);
+        std::vector<std::string> cmd_so = {cfg.compiler, "-shared", "-o", shared_lib.string()};
+
+        cmd_so.insert(cmd_so.end(), cfg.flags_common.begin(), cfg.flags_common.end());
+        cmd_so.insert(cmd_so.end(), cfg.flags_stdlib.begin(), cfg.flags_stdlib.end());
+
+        for (const auto &m : modules) cmd_so.push_back(m.obj(cfg).string());
+
+        // Include system libs (luring)
+        cmd_so.push_back("-luring");
+
+        if (!run_cmd(cmd_so).first)
+            return 1;
+    }
+
+    // 4. Link Executable
+    fs::path exe = cfg.dir_bin / cfg.exe_name;
+    if (link_needed || is_outdated(cfg.main_src, exe))
+    {
+        bld::log(bld::Log_type::INFO, "Linking Executable...");
+        std::vector<std::string> cmd_link = {cfg.compiler};
+        cmd_link.insert(cmd_link.end(), cfg.flags_common.begin(), cfg.flags_common.end());
+        cmd_link.insert(cmd_link.end(), cfg.flags_stdlib.begin(), cfg.flags_stdlib.end());
+        cmd_link.push_back(cfg.main_src);
+        for (const auto &m : modules) cmd_link.push_back(m.obj(cfg).string());
+        cmd_link.push_back("-o");
+        cmd_link.push_back(exe.string());
+        auto paths = cfg.get_mod_flags();
+        cmd_link.insert(cmd_link.end(), paths.begin(), paths.end());
+        cmd_link.push_back("-luring");
+
+        auto res_link = run_cmd(cmd_link);
+        if (!res_link.first)
+            return 1;
+        json_entries.push_back({fs::current_path().string(), res_link.second, cfg.main_src});
+        bld::log(bld::Log_type::INFO, "Done.");
+    }
+    else
+    {
+        bld::log(bld::Log_type::INFO, "Up to date.");
+    }
+
+    bld::log(bld::Log_type::INFO, "Emitting json");
+    emit_json(json_entries);
     return 0;
 }

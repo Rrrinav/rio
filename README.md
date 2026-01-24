@@ -4,16 +4,16 @@ Read requirments.
 
 ## Building
 
-make a folder `std` in inside rio directory and put std.pcm there.
-
 ```sh
 $ g++ ./bld.cpp -o bld --std=c++23 && ./bld
 ```
 
+Follow instructions if bulding std module fails.
+
 ## Requirements
 
 - Clang 21.1
-    - basically modules and c++ support
+    - basically modules and c++23 support
 - libc++
 - liburing
 

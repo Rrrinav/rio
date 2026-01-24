@@ -5,8 +5,8 @@ CompileFlags:
     - -std=c++23
     - -stdlib=libc++
     - -Wall
-    - -fprebuilt-module-path=build/
-    - -fprebuilt-module-path=std/
+    - -fprebuilt-module-path=bin/pcms/
+    - -fprebuilt-module-path=bin/std/
 
   Compiler: clang++
 

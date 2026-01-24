@@ -16,9 +16,104 @@ import :utils;
 namespace rio::io {
 
 export template<typename T>
+
 concept HasHandle = requires(T t) {
-    { t.fd } -> std::same_as<rio::handle&>;
+    { t.fd } -> std::convertible_to<int>;
 };
+
+
+export auto read(const rio::handle &fd, std::span<char> buf) -> result<std::size_t>
+{
+    if (!fd) return std::unexpected(Err{EBADF, "FD not open"});
+
+    int n = ::read(fd.fd, buf.data(), buf.size());
+
+    if (n == -1)
+    {
+        if (errno == EINTR)
+            return read(fd, buf);
+        return std::unexpected(Err{errno, "File read failed"});
+    }
+    return static_cast<std::size_t>(n);
+}
+
+export auto read_str(const rio::handle& h) -> result<std::string>
+{
+    if (!h)
+        return std::unexpected(Err{EBADF, "FD not open"});
+
+    std::string out;
+    out.reserve(4096);
+
+    char chunk[4096];
+
+    while (true)
+    {
+        ssize_t n = ::read(h.fd, chunk, sizeof(chunk));
+
+        if (n == 0)
+            break; // EOF
+
+        if (n < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            return std::unexpected(Err{errno, "FD read failed"});
+        }
+
+        out.append(chunk, static_cast<std::size_t>(n));
+    }
+
+    return out;
+}
+
+export auto read_line(const rio::handle& fd) -> result<std::string>
+{
+    if (!fd)
+        return std::unexpected(rio::Err::app(std::errc::bad_file_descriptor, "FD not open"));
+
+    std::string out;
+    out.reserve(128);
+
+    char ch;
+
+    while (true)
+    {
+        ssize_t n = ::read(fd.fd, &ch, 1);
+
+        if (n == 0) // EOF
+            break;
+
+        if (n < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            return std::unexpected(Err{errno, "FD read failed"});
+        }
+
+        out.push_back(ch);
+
+        if (ch == '\n')
+            break;
+    }
+
+    return out;
+}
+
+export auto write(const rio::handle &f, std::span<const char> data) -> result<std::size_t>
+{
+    if (!f)
+        return std::unexpected(Err{EBADF, "FD not open"});
+
+    int n = ::write(f.fd, data.data(), data.size());
+    if (n == -1)
+    {
+        if (errno == EINTR)
+            return write(f, data);
+        return std::unexpected(Err{errno, "File write failed"});
+    }
+    return static_cast<std::size_t>(n);
+}
 
 export auto read(const rio::file &f, std::span<char> buf) -> result<std::size_t>
 {
@@ -55,13 +150,11 @@ export auto write(const rio::file &f, std::span<const char> data) -> result<std:
 
 export auto read(const rio::Tcp_socket &s, std::span<char> buf) -> std::size_t
 {
-    // We use recv for sockets. In sync mode, this returns as soon as
-    // any data is available, solving your "wait for disconnect" issue.
     int n = ::recv(s.fd, buf.data(), buf.size(), 0);
 
     if (n == -1)
     {
-        if (EINTR)
+        if (errno == EINTR)
             return read(s, buf);
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;
@@ -78,7 +171,7 @@ export auto write(const rio::Tcp_socket &s, std::span<const char> data) -> std::
 
     if (n == -1)
     {
-        if (EINTR)
+        if (errno == EINTR)
             return write(s, data);
         return -1;
     }
