@@ -16,7 +16,6 @@ export struct context
     {
         if (int ret = io_uring_queue_init(entries, &ring, 0); ret < 0)
             throw std::runtime_error(std::format("Failed to init io_uring, return: {}.", std::to_string(-ret)));
-
     }
 
     ~context()

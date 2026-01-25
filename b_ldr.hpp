@@ -19,9 +19,9 @@
 */
 
 /*
- * HEAVILY INSPIRED BY nob.h
- * github.com/tsoding/nob.h
- */
+  ==   HEAVILY INSPIRED BY nob.h by rexim/alexey/tsoding.  ==
+  ==   github.com/tsoding/nob.h                            ==
+*/
 
 /*
   INFO: DEFINES:

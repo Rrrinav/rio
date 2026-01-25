@@ -14,6 +14,8 @@
 
 namespace fs = std::filesystem;
 
+// TODO: Implement parallel build but if I have a bottleneck.
+
 struct Config
 {
     const fs::path dir_src = "src/";
@@ -56,7 +58,7 @@ struct Module
     fs::path obj(const Config &cfg) const { return cfg.dir_obj / (safe_name() + ".o"); }
 };
 
-struct CompileCommand
+struct Compile_command
 {
     std::string directory;
     std::string command;
@@ -76,17 +78,7 @@ std::pair<bool, std::string> run_cmd(const std::vector<std::string> &parts, bool
     return {bld::execute(cmd), full_cmd_str};
 }
 
-bool is_outdated(const fs::path &src, const fs::path &target)
-{
-    if (!fs::exists(src))
-    {
-        bld::log(bld::Log_type::ERR, "Missing source: " + src.string());
-        exit(1);
-    }
-    return !fs::exists(target) || fs::last_write_time(src) > fs::last_write_time(target);
-}
-
-void emit_json(const std::vector<CompileCommand> &cmds)
+void emit_json(const std::vector<Compile_command> &cmds)
 {
     std::ofstream out("compile_commands.json");
     out << "[\n";
@@ -372,14 +364,14 @@ int main(int argc, char *argv[])
 
     auto modules = sort_modules(scan_modules(cfg));
     bool link_needed = false;
-    std::vector<CompileCommand> json_entries;
+    std::vector<Compile_command> json_entries;
 
     // 1. Build Modules
     for (const auto &mod : modules)
     {
         fs::path pcm = mod.pcm(cfg);
         fs::path obj = mod.obj(cfg);
-        bool build = is_outdated(mod.file, pcm);
+        bool build = bld::is_executable_outdated(mod.file, pcm);
 
         // A. Precompile
         std::vector<std::string> cmd_pcm = {cfg.compiler};
@@ -445,7 +437,7 @@ int main(int argc, char *argv[])
 
     // 4. Link Executable
     fs::path exe = cfg.dir_bin / cfg.exe_name;
-    if (link_needed || is_outdated(cfg.main_src, exe))
+    if (link_needed || bld::is_executable_outdated(cfg.main_src, exe))
     {
         bld::log(bld::Log_type::INFO, "Linking Executable...");
         std::vector<std::string> cmd_link = {cfg.compiler};
@@ -470,7 +462,7 @@ int main(int argc, char *argv[])
         bld::log(bld::Log_type::INFO, "Up to date.");
     }
 
-    bld::log(bld::Log_type::INFO, "Emitting json");
+    bld::log(bld::Log_type::INFO, "Emitting json...");
     emit_json(json_entries);
     return 0;
 }

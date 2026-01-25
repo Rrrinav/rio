@@ -13,25 +13,28 @@ import :file;
 import :socket.tcp_socket;
 import :utils;
 
+// This is fine because this won't leak because modules becuase because because...
+#define __Check_Handle_M(fd) \
+    if (!fd) return std::unexpected(Err::app(std::errc::bad_file_descriptor,"FD not open"));
+
 namespace rio::io {
 
 export template<typename T>
-
-concept HasHandle = requires(T t) {
+concept Has_Handle_C = requires(T t) {
     { t.fd } -> std::convertible_to<int>;
 };
 
 
-export auto read(const rio::handle &fd, std::span<char> buf) -> result<std::size_t>
+export auto read(const rio::handle &h, std::span<char> buf) -> result<std::size_t>
 {
-    if (!fd) return std::unexpected(Err{EBADF, "FD not open"});
+    __Check_Handle_M(h);
 
-    int n = ::read(fd.fd, buf.data(), buf.size());
+    int n = ::read(h.fd, buf.data(), buf.size());
 
     if (n == -1)
     {
         if (errno == EINTR)
-            return read(fd, buf);
+            return read(h, buf);
         return std::unexpected(Err{errno, "File read failed"});
     }
     return static_cast<std::size_t>(n);
@@ -39,8 +42,7 @@ export auto read(const rio::handle &fd, std::span<char> buf) -> result<std::size
 
 export auto read_str(const rio::handle& h) -> result<std::string>
 {
-    if (!h)
-        return std::unexpected(Err{EBADF, "FD not open"});
+    __Check_Handle_M(h);
 
     std::string out;
     out.reserve(4096);
@@ -69,8 +71,7 @@ export auto read_str(const rio::handle& h) -> result<std::string>
 
 export auto read_line(const rio::handle& fd) -> result<std::string>
 {
-    if (!fd)
-        return std::unexpected(rio::Err::app(std::errc::bad_file_descriptor, "FD not open"));
+    __Check_Handle_M(fd);
 
     std::string out;
     out.reserve(128);
@@ -100,16 +101,15 @@ export auto read_line(const rio::handle& fd) -> result<std::string>
     return out;
 }
 
-export auto write(const rio::handle &f, std::span<const char> data) -> result<std::size_t>
+export auto write(const rio::handle &h, std::span<const char> data) -> result<std::size_t>
 {
-    if (!f)
-        return std::unexpected(Err{EBADF, "FD not open"});
+    __Check_Handle_M(h);
 
-    int n = ::write(f.fd, data.data(), data.size());
+    int n = ::write(h.fd, data.data(), data.size());
     if (n == -1)
     {
         if (errno == EINTR)
-            return write(f, data);
+            return write(h, data);
         return std::unexpected(Err{errno, "File write failed"});
     }
     return static_cast<std::size_t>(n);
@@ -117,8 +117,7 @@ export auto write(const rio::handle &f, std::span<const char> data) -> result<st
 
 export auto read(const rio::file &f, std::span<char> buf) -> result<std::size_t>
 {
-    if (!f)
-        return std::unexpected(Err{EBADF, "File not open"});
+    __Check_Handle_M(f);
 
     int n = ::read(f.fd, buf.data(), buf.size());
 
@@ -133,8 +132,7 @@ export auto read(const rio::file &f, std::span<char> buf) -> result<std::size_t>
 
 export auto write(const rio::file &f, std::span<const char> data) -> result<std::size_t>
 {
-    if (!f)
-        return std::unexpected(Err{EBADF, "File not open"});
+    __Check_Handle_M(f);
 
     int n = ::write(f.fd, data.data(), data.size());
     if (n == -1)
@@ -178,7 +176,7 @@ export auto write(const rio::Tcp_socket &s, std::span<const char> data) -> std::
     return static_cast<std::size_t>(n);
 }
 
-export auto write_all(const HasHandle auto &resource, std::span<const char> data) -> bool
+export auto write_all(const Has_Handle_C auto &resource, std::span<const char> data) -> bool
 {
     std::size_t total = 0;
     while (total < data.size())
@@ -191,13 +189,12 @@ export auto write_all(const HasHandle auto &resource, std::span<const char> data
     return {};
 }
 
-export auto read_all(const HasHandle auto &resource, std::string &out) -> result<std::size_t>
+export auto read_all(const Has_Handle_C auto &resource, std::string &out) -> result<std::size_t>
 {
-    if (!resource)
-        return std::unexpected(Err{EBADF, "Resource closed"});
+    __Check_Handle_M(resource.fd);
 
     std::size_t total_read = 0;
-    char chunk[4096];  // 4KB is the standard page size for Linux I/O
+    char chunk[4096];  // 4KB is the standard
 
     while (true)
     {

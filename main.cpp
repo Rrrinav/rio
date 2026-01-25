@@ -2,7 +2,6 @@
 #include <unistd.h>
 #include <cstdint>
 #include <cstdio>
-#include <exception>
 #include <limits>
 #include <print>
 #include <string>
@@ -12,6 +11,7 @@ import std;
 import rio;
 
 const rio::handle out(STDOUT_FILENO);
+const rio::handle err(STDERR_FILENO);
 const rio::handle in(STDOUT_FILENO);
 
 void accept_handler(rio::Tcp_socket sock, const rio::address& add)
@@ -26,16 +26,20 @@ void accept_handler(rio::Tcp_socket sock, const rio::address& add)
 
     if (n <= 0)
     {
-        rio::io::write(out, " [RIO]: Receive issue.\n");
-        rio::io::write(out, " [RIO]: Client disconnected.\n");
-        rio::kill(sock.fd);
+        std::println(std::cerr, " [RIO]: Receive issue.\n");
+        std::println(std::cerr, " [RIO]: Client disconnected.\n");
         return;
     }
 
     rio::io::write(out, " [RIO]: Received: ");
-    rio::io::write(out, std::span<char>{msg_buf, n});
+    auto mssg = std::span<char>{msg_buf, n};
+
+    rio::io::write(out, mssg);
+    if (mssg.back() != '\n' || mssg.size() == 0)
+        rio::io::write(out, "\r\n");
+
     rio::io::write(sock, "You sent: ");
-    rio::io::write(sock, std::span<char>{msg_buf, n});
+    rio::io::write(sock, mssg);
     rio::io::write(sock, "\r\n");
 
     // Not required because handle (fd) in Tcp_socket will destroy itself using RAII.
@@ -92,7 +96,7 @@ int main()
 
     if (!sock_res)
     {
-        rio::io::write(out, std::format("Socket creation failed: {}\n", sock_res.error()));
+        rio::io::write(err, std::format("Socket creation failed: {}\n", sock_res.error()));
         return 1;
     }
 
@@ -109,5 +113,6 @@ int main()
         }
     }
 
+    std::flush(std::cout);
     return 0;
 }
