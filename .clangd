@@ -20,3 +20,10 @@ CompileFlags:
   Add:
     - -x
     - c++-module
+
+If:
+  PathMatch: .*\.c
+
+CompileFlags:
+  Add:
+    - -std=c23

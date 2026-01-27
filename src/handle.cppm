@@ -17,8 +17,10 @@ export struct handle
     // Constructors
     handle() = default;
     explicit handle(int f) : fd(f) {}
+
     handle(const handle &) = delete;
     handle &operator=(const handle &) = delete;
+
     handle(handle &&other) noexcept : fd(other.fd) { other.fd = -1; }
     handle &operator=(handle &&other) noexcept;
     ~handle() { close(); }

@@ -25,7 +25,6 @@ rio::task<void> client_loop(rio::context &IO, Client *c)
 {
     while (true)
     {
-        // if your API returns result<size_t>, use that instead
         auto res = co_await rio::co::read(IO, c->sock, c->buf);
 
         if (!res)

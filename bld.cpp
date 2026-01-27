@@ -8,14 +8,18 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <print>
 
 #define B_LDR_IMPLEMENTATION
 #include "b_ldr.hpp"
 
+
+auto &bld_cfg = bld::Config::get();
+
 namespace fs = std::filesystem;
 
+// TODO: Support g++ too.
 // TODO: Implement parallel build but if I have a bottleneck.
-
 struct Config
 {
     const fs::path dir_src = "src/";
@@ -141,7 +145,7 @@ std::optional<fs::path> load_cache()
 
 bool build_std_module(const Config &cfg)
 {
-    if (fs::exists(cfg.dir_std / "std.pcm"))
+    if (fs::exists(cfg.dir_std / "std.pcm") && !bld_cfg["build-all"])
         return true;
 
     bld::log(bld::Log_type::INFO, "Building Standard Module...");
@@ -333,7 +337,6 @@ std::vector<Module> sort_modules(const std::vector<Module> &input)
 }
 
 // --- Main ---
-auto &bld_cfg = bld::Config::get();
 int main(int argc, char *argv[])
 {
     BLD_REBUILD_YOURSELF_ONCHANGE();
@@ -341,9 +344,30 @@ int main(int argc, char *argv[])
 
     Config cfg;
 
-    if (bld_cfg["clean"])
+    if (bld_cfg["clean-all"])
     {
         bld::fs::remove_dir(cfg.dir_bin);
+        return 0;
+    }
+    if (bld_cfg["clean"])
+    {
+        std::vector<std::string> dirs;
+        bld::fs::walk_directory(cfg.dir_bin, [&] (bld::fs::Walk_fn_opt& opt) -> bool {
+            // Idk how to handle this '+ "/"' thing properly, standard library must handle this but ok.
+            // They must do semantic and not lexical comparison.
+            if ((opt.path.string() + "/") == cfg.dir_std.string())
+            {
+                opt.action = bld::fs::Walk_act::Ignore;
+                return true;
+            }
+            if (std::filesystem::is_directory(opt.path))
+            {
+                dirs.push_back(opt.path.string());
+            }
+            return true;
+        });
+        for (auto& d : dirs)
+            bld::fs::remove_dir(d);
         return 0;
     }
     if (bld_cfg["run"])
@@ -363,6 +387,7 @@ int main(int argc, char *argv[])
         return 1;
 
     auto modules = sort_modules(scan_modules(cfg));
+
     bool link_needed = false;
     std::vector<Compile_command> json_entries;
 
@@ -371,7 +396,10 @@ int main(int argc, char *argv[])
     {
         fs::path pcm = mod.pcm(cfg);
         fs::path obj = mod.obj(cfg);
-        bool build = bld::is_executable_outdated(mod.file, pcm);
+
+        bool build = false;
+        if (bld_cfg["build-all"]) build = true;
+        else build = bld::is_executable_outdated(mod.file, pcm);
 
         // A. Precompile
         std::vector<std::string> cmd_pcm = {cfg.compiler};
@@ -437,7 +465,13 @@ int main(int argc, char *argv[])
 
     // 4. Link Executable
     fs::path exe = cfg.dir_bin / cfg.exe_name;
-    if (link_needed || bld::is_executable_outdated(cfg.main_src, exe))
+
+    bool build_req = false;
+
+    if (bld_cfg["build-all"]) build_req = true;
+    else build_req = bld::is_executable_outdated(cfg.main_src, exe);
+
+    if (link_needed || build_req)
     {
         bld::log(bld::Log_type::INFO, "Linking Executable...");
         std::vector<std::string> cmd_link = {cfg.compiler};
