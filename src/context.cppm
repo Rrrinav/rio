@@ -21,6 +21,14 @@ export struct context
 {
     io_uring ring{};
 
+    struct tombstone
+    {
+        void *ptr;
+        void (*destroy)(void *);
+    };
+
+    std::vector<tombstone> graveyard;
+
     explicit context(unsigned entries = 128)
     {
         if (int ret = io_uring_queue_init(entries, &ring, 0); ret < 0)
@@ -99,8 +107,48 @@ export struct context
             }
         }
 
-        // Must advance the ring, otherwise we read the same events again!
         io_uring_cq_advance(&ring, count);
+    }
+
+    auto run(bool& quit)
+    {
+        while(!quit)
+            this->poll();
+    }
+    void run()
+    {
+        while (true)
+            this->poll();
+    }
+
+    template <typename T>
+    void defer_delete(T *ptr)
+    {
+        if (!ptr)
+            return;
+
+        graveyard.push_back({.ptr = static_cast<void *>(ptr), .destroy = [](void *p) { delete static_cast<T *>(p); }});
+    }
+
+    void purge_graveyard()
+    {
+        if (graveyard.empty())
+            return;
+
+        // 1. SWAP: Move pending items to a local batch.
+        //    This prevents crashes if a destructor calls defer_delete() recursively.
+        std::vector<tombstone> batch;
+        batch.swap(graveyard);
+
+        // 2. SORT: Bring duplicates together
+        std::ranges::sort(batch, {}, &tombstone::ptr);
+
+        // 3. UNIQUE: Move duplicates to the end
+        //    'ret' is a subrange {first_duplicate, end}
+        auto ret = std::ranges::unique(batch, {}, &tombstone::ptr);
+
+        // 4. DESTROY: Only the unique items
+        for (auto it = batch.begin(); it != ret.begin(); ++it) it->destroy(it->ptr);
     }
 };
 

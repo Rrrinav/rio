@@ -349,4 +349,70 @@ auto Tcp_socket::open_and_listen(const char *ip, uint16_t port, s_opt options, i
     return o_res;
 }
 
+export auto try_accept(Tcp_socket &s, address &peer_addr, s_opt options = s_opt::none) -> result<Tcp_socket>
+{
+    const int flags = SOCK_CLOEXEC | SOCK_NONBLOCK;
+
+    socklen_t len = sizeof(peer_addr.storage);
+    const int fd = ::accept4(s.fd, &peer_addr.storage.general, &len, flags);
+
+    if (fd == -1) [[unlikely]]
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return std::unexpected(Err::app(std::errc::operation_would_block, "Would block/No pending connections"));
+
+        return std::unexpected(Err{errno, "Failed to accept connection"});
+    }
+
+    peer_addr.len = len;
+
+    if (has(options, s_opt::nodelay)) [[unlikely]]
+    {
+        constexpr int on = 1;
+        ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
+    }
+
+    return Tcp_socket::attach(fd);
+}
+
+export auto try_read(Tcp_socket &s, std::span<char> buf) -> result<std::size_t>
+{
+    // MSG_DONTWAIT: Fails with EAGAIN if no data, doesn't block.
+    ssize_t n = ::recv(s.fd.native_handle(), buf.data(), buf.size(), MSG_DONTWAIT);
+
+    if (n == -1)
+    {
+        // The magic translation: System Errno -> API Status
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return std::unexpected(Err::app(std::errc::operation_would_block, "Would block"));
+
+        if (errno == EINTR)
+            return try_read(s, buf);  // Retry interrupt
+
+        return std::unexpected(Err{errno, "Socket read failed"});
+    }
+
+    return static_cast<std::size_t>(n);
+}
+
+export auto try_write(Tcp_socket &s, std::span<const char> buf) -> result<std::size_t>
+{
+    // MSG_NOSIGNAL: Don't crash process on broken pipe
+    // MSG_DONTWAIT: Don't block if buffer is full
+    ssize_t n = ::send(s.fd.native_handle(), buf.data(), buf.size(), MSG_DONTWAIT | MSG_NOSIGNAL);
+
+    if (n == -1)
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return std::unexpected(Err::app(std::errc::operation_would_block, "Would block"));
+
+        if (errno == EINTR)
+            return try_write(s, buf);
+
+        return std::unexpected(Err{errno, "Socket write failed"});
+    }
+
+    return static_cast<std::size_t>(n);
+}
+
 }  // namespace rio

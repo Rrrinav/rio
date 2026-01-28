@@ -14,6 +14,7 @@ export import :file;
 export import :socket;
 export import :context;
 export import :asio;
+export import :futures;
 
 namespace rio {
 export auto kill(rio::handle &h) -> void

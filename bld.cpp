@@ -398,7 +398,7 @@ int main(int argc, char *argv[])
         fs::path obj = mod.obj(cfg);
 
         bool build = false;
-        if (bld_cfg["build-all"]) build = true;
+        if (bld_cfg["build-all"] || bld_cfg["build"]) build = true;
         else build = bld::is_executable_outdated(mod.file, pcm);
 
         // A. Precompile
@@ -468,7 +468,7 @@ int main(int argc, char *argv[])
 
     bool build_req = false;
 
-    if (bld_cfg["build-all"]) build_req = true;
+    if (bld_cfg["build-all"] || bld_cfg["build"]) build_req = true;
     else build_req = bld::is_executable_outdated(cfg.main_src, exe);
 
     if (link_needed || build_req)
