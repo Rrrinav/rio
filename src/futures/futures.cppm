@@ -93,6 +93,9 @@ struct Future
 
     template <typename Fn>
     auto then(Fn fn) &&;
+
+    template <typename Rep, typename Period>
+    auto timeout(std::chrono::duration<Rep, Period> d) &&;
 };
 
 export template <typename State, typename PollFn>
@@ -194,6 +197,39 @@ Future(State, PollFn) -> Future<State, PollFn>;
     export template <typename State, typename BodyFn>
     Loop(State, BodyFn) -> Loop<State, BodyFn>;
 
+    template<typename Fut>
+    struct Timeout
+    {
+        using value_type = Fut::value_type;
+        Fut fut;
+        std::chrono::steady_clock::time_point deadline;
+        bool timed_out = false;
+
+        fut::res<value_type> poll()
+        {
+            if (timed_out) [[unlikely]]
+                return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));
+
+            auto r = rio::poll(fut);
+
+            if (r.state != fut::status::pending)
+                return r;
+
+            if (std::chrono::steady_clock::now() >= deadline)
+            {
+                timed_out = true;
+                return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));
+            }
+
+            return fut::res<value_type>::pending();
+        }
+
+        friend auto tag_invoke(poll_t, Timeout &t) { return t.poll(); }
+    };
+
+    export template <typename F>
+    Timeout(F, std::chrono::steady_clock::time_point) -> Timeout<F>;
+
     } // namespace fut
 
     namespace fut {
@@ -228,6 +264,14 @@ template <typename Fn>
 auto Future<S, P>::then(Fn fn) &&
 {
     return fut::Then<Future, Fn>{.first_fut = std::move(*this), .fn = std::move(fn)};
+}
+
+
+template <typename S, typename P>
+template <typename Rep, typename Period>
+auto Future<S, P>::timeout(std::chrono::duration<Rep, Period> d) &&
+{
+    return fut::Timeout<Future>{.inner_fut = std::move(*this), .deadline = std::chrono::steady_clock::now() + d};
 }
 
 }  // namespace rio

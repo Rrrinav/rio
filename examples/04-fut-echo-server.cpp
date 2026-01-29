@@ -104,7 +104,7 @@ auto main() -> int
             // If we weren't using fut::loop, we would have to handle looping manually like:
             //
             // if (session_res.state == rio::fut::status::ready)
-            //     clients[i] = read_again();
+            //     clients[i] = make_echo_client();
             auto session_res = rio::poll(clients[i]);
 
             if (session_res.state == rio::fut::status::error)

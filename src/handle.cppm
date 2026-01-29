@@ -26,10 +26,11 @@ export struct handle
     ~handle() { close(); }
 
     // Minimal methods
-    void close();
+    auto close() -> void;
     explicit operator bool() const;
     operator int() const { return fd; }
-    int native_handle() const;
+    auto native_handle() const -> int;
+    auto detatch() -> void;
 };
 
 // Definitions

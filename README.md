@@ -35,4 +35,12 @@ import rio
 ### Compile
 ```sh
 clang++  -o main main.cpp -std=c++23 -stdlib=libc++ -fprebuilt-module-path=./bin/pcms/ -fprebuilt-module-path=./bin/std/ -L./bin/libs/ -lrio  -luring
+
 ```
+## Docs
+
+Read examples in order.
+
+## Credits
+
+[rinav](github.com/rrrinav)

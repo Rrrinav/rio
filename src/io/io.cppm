@@ -40,7 +40,7 @@ export auto read(const rio::handle &h, std::span<char> buf) -> result<std::size_
     return static_cast<std::size_t>(n);
 }
 
-export auto read_str(const rio::handle& h) -> result<std::string>
+export auto read(const rio::handle& h) -> result<std::string>
 {
     __Check_Handle_M(h);
 
@@ -92,10 +92,10 @@ export auto read_line(const rio::handle& fd) -> result<std::string>
             return std::unexpected(Err{errno, "FD read failed"});
         }
 
-        out.push_back(ch);
-
         if (ch == '\n')
             break;
+
+        out.push_back(ch);
     }
 
     return out;
@@ -128,6 +128,16 @@ export auto read(const rio::file &f, std::span<char> buf) -> result<std::size_t>
         return std::unexpected(Err{errno, "File read failed"});
     }
     return static_cast<std::size_t>(n);
+}
+
+export auto read_str(const rio::file &f, std::string& str) -> result<void>
+{
+    auto res = read(f.fd);
+
+    if (!res) return std::unexpected(res.error());
+    else str = std::move(res.value());
+
+    return{};
 }
 
 export auto write(const rio::file &f, std::span<const char> data) -> result<std::size_t>

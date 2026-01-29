@@ -28,8 +28,8 @@ export enum class f_mode : int
     write_app = write | create | append | cloexec
 };
 
-constexpr f_mode operator|(f_mode lhs, f_mode rhs) { return static_cast<f_mode>(static_cast<int>(lhs) | static_cast<int>(rhs)); }
-constexpr f_mode operator&(f_mode lhs, f_mode rhs) { return static_cast<f_mode>(static_cast<int>(lhs) & static_cast<int>(rhs)); }
+export constexpr f_mode operator|(f_mode lhs, f_mode rhs) { return static_cast<f_mode>(static_cast<int>(lhs) | static_cast<int>(rhs)); }
+export constexpr f_mode operator&(f_mode lhs, f_mode rhs) { return static_cast<f_mode>(static_cast<int>(lhs) & static_cast<int>(rhs)); }
 constexpr bool has(f_mode subject, f_mode flag)    { return (static_cast<int>(subject) & static_cast<int>(flag)) == static_cast<int>(flag); }
 
 export struct file
@@ -41,6 +41,7 @@ export struct file
 
     static auto open(const char *path, f_mode flags = f_mode::read_only) -> result<file>;
     static auto attach(int raw_fd) -> file;
+    auto detatch() -> void;
 
     explicit operator bool() const;
 };
