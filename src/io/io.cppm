@@ -181,7 +181,7 @@ export auto write(const rio::Tcp_socket &s, std::span<const char> data) -> std::
     {
         if (errno == EINTR)
             return write(s, data);
-        return -1;
+        return errno;
     }
     return static_cast<std::size_t>(n);
 }

@@ -1,11 +1,4 @@
 module;
-#include <cstdint>
-#include <optional>
-#include <system_error>
-#include <concepts>
-#include <utility>
-#include <type_traits>
-
 export module rio:futures;
 
 import std;
@@ -14,7 +7,6 @@ import std.compat;
 namespace rio {
 
     namespace fut {
-
     export enum class status : ::uint8_t { pending, error, ready };
 
     export template <typename T>
@@ -44,11 +36,12 @@ namespace rio {
         static res error(std::error_code ec) { return {.state = status::error, .err = ec}; }
     };
 
-    }  // namespace fut
+    }
 
     namespace tag_invoke_ns {
 
-    // If compiler finds this one during resolution that means type you are trying to poll is not a valid future.
+    // If compiler finds this during resolution, it means your future is invalid
+    // rather your type is not a valid future.
     void tag_invoke();
 
     struct poll_t
@@ -60,16 +53,12 @@ namespace rio {
             return tag_invoke(*this, std::forward<T>(t));
         }
     };
-
-    }  // namespace tag_invoke_ns
-
+    }
 using tag_invoke_ns::poll_t;
 export inline constexpr poll_t poll{};
 
-template <typename T>
-struct is_poll_res : std::false_type {};
-template <typename T>
-struct is_poll_res<fut::res<T>> : std::true_type {};
+template <typename T> struct is_poll_res : std::false_type {};
+template <typename T> struct is_poll_res<fut::res<T>> : std::true_type {};
 
 export template <typename F>
 concept Pollable = requires(F &f) {
@@ -78,12 +67,15 @@ concept Pollable = requires(F &f) {
 };
 
 export template <typename Fn, typename State>
-concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_result_t<Fn &, State &>>::value;
+concept PollFunction = std::invocable<Fn &, State &> && 
+                       is_poll_res<std::invoke_result_t<Fn &, State &>>::value;
+
 
 export template <typename State, typename PollFn>
 struct Future
 {
-    using value_type = typename std::invoke_result_t<PollFn &, State &>::value_type;
+    using state_type = State;
+    using value_type = typename std::invoke_result_t<PollFn&, State&>::value_type;
 
     State state;
     PollFn fn;
@@ -91,11 +83,13 @@ struct Future
     fut::res<value_type> poll() { return fn(state); }
     friend auto tag_invoke(poll_t, Future &f) { return f.poll(); }
 
-    template <typename Fn>
-    auto then(Fn fn) &&;
+    template <typename Fn> auto then(Fn fn) &&;
 
     template <typename Rep, typename Period>
     auto timeout(std::chrono::duration<Rep, Period> d) &&;
+
+    template <typename Rep, typename Period, typename Callback>
+    auto timeout_with(std::chrono::duration<Rep, Period> d, Callback cb) &&;
 };
 
 export template <typename State, typename PollFn>
@@ -108,7 +102,6 @@ Future(State, PollFn) -> Future<State, PollFn>;
     {
         using type = std::invoke_result_t<Fn &, Input>;
     };
-
     template <typename Fn>
     struct next_fut_t<Fn, void>
     {
@@ -118,11 +111,11 @@ Future(State, PollFn) -> Future<State, PollFn>;
     }  // namespace detail
 
     namespace fut {
+
     export template <Pollable F, typename Fn>
     struct Then
     {
         using input_type = typename F::value_type;
-
         using NextFuture = typename detail::next_fut_t<Fn, input_type>::type;
         using value_type = typename NextFuture::value_type;
 
@@ -164,6 +157,9 @@ Future(State, PollFn) -> Future<State, PollFn>;
         friend auto tag_invoke(poll_t, Then &t) { return t.poll(); }
     };
 
+    export template <Pollable Fut, typename Fn>
+    Then(Fut, Fn) -> Then<Fut, Fn>;
+
     export template <typename State, typename BodyFn>
     struct Loop
     {
@@ -193,15 +189,14 @@ Future(State, PollFn) -> Future<State, PollFn>;
         }
         friend auto tag_invoke(poll_t, Loop &l) { return l.poll(); }
     };
-
     export template <typename State, typename BodyFn>
     Loop(State, BodyFn) -> Loop<State, BodyFn>;
 
-    template<typename Fut>
+    export template <typename F>
     struct Timeout
     {
-        using value_type = Fut::value_type;
-        Fut fut;
+        using value_type = typename F::value_type;
+        F fut;
         std::chrono::steady_clock::time_point deadline;
         bool timed_out = false;
 
@@ -211,7 +206,6 @@ Future(State, PollFn) -> Future<State, PollFn>;
                 return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));
 
             auto r = rio::poll(fut);
-
             if (r.state != fut::status::pending)
                 return r;
 
@@ -220,15 +214,61 @@ Future(State, PollFn) -> Future<State, PollFn>;
                 timed_out = true;
                 return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));
             }
-
             return fut::res<value_type>::pending();
         }
-
         friend auto tag_invoke(poll_t, Timeout &t) { return t.poll(); }
     };
+    export template <typename F> Timeout(F, std::chrono::steady_clock::time_point) -> Timeout<F>;
 
-    export template <typename F>
-    Timeout(F, std::chrono::steady_clock::time_point) -> Timeout<F>;
+    export template <typename F, typename Callback, typename RecoveryFut>
+    struct TimeoutWith
+    {
+        using value_type = typename F::value_type;
+
+        F first_fut;
+        std::chrono::steady_clock::time_point deadline;
+        Callback callback;
+
+        enum class Phase : uint8_t
+        {
+            Normal,
+            Recovery,
+            Done
+        } phase = Phase::Normal;
+        std::optional<RecoveryFut> recovery_fut{};
+
+        fut::res<value_type> poll()
+        {
+            if (phase == Phase::Done)
+                return fut::res<value_type>::error(std::make_error_code(std::errc::operation_not_permitted));
+
+            if (phase == Phase::Normal)
+            {
+                auto r = rio::poll(first_fut);
+                if (r.state != fut::status::pending)
+                    return r;
+
+                if (std::chrono::steady_clock::now() >= deadline)
+                {
+                    recovery_fut.emplace(callback(std::move(first_fut.state)));
+                    phase = Phase::Recovery;
+                }
+                else
+                {
+                    return fut::res<value_type>::pending();
+                }
+            }
+
+            auto r = rio::poll(*recovery_fut);
+            if (r.state != fut::status::pending)
+                phase = Phase::Done;
+            return r;
+        }
+        friend auto tag_invoke(poll_t, TimeoutWith &t) { return t.poll(); }
+    };
+
+    export template <typename F, typename C>
+    TimeoutWith(F, std::chrono::steady_clock::time_point, C) -> TimeoutWith<F, C, std::invoke_result_t<C &, typename F::state_type &&>>;
 
     } // namespace fut
 
@@ -255,23 +295,43 @@ Future(State, PollFn) -> Future<State, PollFn>;
     export template <typename State, typename BodyFn>
     auto loop(State &&s, BodyFn &&fn)
     {
-        return Loop<std::decay_t<State>, std::decay_t<BodyFn>>{.state = std::forward<State>(s), .body_fn = std::forward<BodyFn>(fn)};
+        using L = Loop<std::decay_t<State>, std::decay_t<BodyFn>>;
+
+        L loop_state = {.state = std::forward<State>(s), .body_fn = std::forward<BodyFn>(fn)};
+
+        // Return Future, enabling .timeout() on the loop itself!
+        return make(std::move(loop_state), [](L &l) { return l.poll(); });
     }
-    }  // namespace fut
+
+    } // namespace fut
 
 template <typename S, typename P>
 template <typename Fn>
 auto Future<S, P>::then(Fn fn) &&
 {
-    return fut::Then<Future, Fn>{.first_fut = std::move(*this), .fn = std::move(fn)};
+    using T = fut::Then<Future, Fn>;
+    T c = {.first_fut = std::move(*this), .fn = std::move(fn)};
+    return fut::make(std::move(c), [](T &s) { return s.poll(); });
 }
-
 
 template <typename S, typename P>
 template <typename Rep, typename Period>
 auto Future<S, P>::timeout(std::chrono::duration<Rep, Period> d) &&
 {
-    return fut::Timeout<Future>{.inner_fut = std::move(*this), .deadline = std::chrono::steady_clock::now() + d};
+    using T = fut::Timeout<Future>;
+    T c = {.fut = std::move(*this), .deadline = std::chrono::steady_clock::now() + d};
+    return fut::make(std::move(c), [](T &s) { return s.poll(); });
 }
 
-}  // namespace rio
+template <typename S, typename P>
+template <typename Rep, typename Period, typename Callback>
+auto Future<S, P>::timeout_with(std::chrono::duration<Rep, Period> d, Callback cb) &&
+{
+    using RecFut = std::invoke_result_t<Callback &, S &&>;
+    using T = fut::TimeoutWith<Future, Callback, RecFut>;
+
+    T c = {.first_fut = std::move(*this), .deadline = std::chrono::steady_clock::now() + d, .callback = std::move(cb)};
+    return fut::make(std::move(c), [](T &s) { return s.poll(); });
+}
+
+} // namespace rio

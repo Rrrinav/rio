@@ -1,4 +1,3 @@
-// This was written by using this file only.
 import rio;
 import std;
 
@@ -13,6 +12,19 @@ int main()
 
     std::string str;
 
+    /*
+        rio::file is an abstraction over rio::handle(01-basic-io.cpp) that acts as a file handle
+
+        methods:
+            1. static auto open(const char *path, f_mode flags = f_mode::read_only) -> result<file>;
+                // Opens using permission: 0644 (-rw-r--r--)
+            2. static auto attach(int raw_fd) -> file;
+                // basically file{rio::handle(raw_fd)}
+            3. auto detatch() -> int;
+                // returns fd and sets fd to -1;
+            4. explicit operator bool() const;
+                implicit bool conversion: returns fd < 0
+    */
     {
         rio::file F;
         if (auto res = rio::file::open(path.c_str()); !res)
@@ -33,7 +45,14 @@ int main()
 
         rio::io::write(out, str);
     }
+    /*
+        Functions on file
+            export auto read(const rio::file &f, std::span<char> buf) -> result<std::size_t>
+            export auto read_str(const rio::file &f, std::string& str) -> result<void>
+            export auto write(const rio::file &f, std::span<const char> data) -> result<std::size_t>
 
+        You can handle functions too just by using file.fd.
+     */
     {
         const std::string header = "// This was written by using this file only.\n";
 
@@ -91,4 +110,3 @@ int main()
 
     return 0;
 }
-

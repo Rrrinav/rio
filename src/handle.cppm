@@ -27,10 +27,11 @@ export struct handle
 
     // Minimal methods
     auto close() -> void;
+    auto detatch() -> int;
+
     explicit operator bool() const;
     operator int() const { return fd; }
     auto native_handle() const -> int;
-    auto detatch() -> void;
 };
 
 // Definitions
@@ -54,6 +55,14 @@ void handle::close()
         fd = -1;
     }
 }
+
+auto handle::detatch() -> int
+{
+    int res = fd;
+    fd = -1;
+    return res;
+}
+
 handle::operator bool() const { return fd != -1; }
 int handle::native_handle() const { return fd; }
 } // namespace rio

@@ -1,6 +1,8 @@
 import std;
 import rio;
 
+constexpr int timeout_seconds = 7;
+
 struct ClientContext
 {
     rio::Tcp_socket sock;
@@ -13,10 +15,10 @@ auto make_echo_client(ClientContext ctx)
 {
     return rio::fut::loop(
         std::move(ctx),
-        [](ClientContext &ctx) {
+        [](ClientContext& ctx) {
             return rio::fut::make(
                 std::move(ctx),
-                [](ClientContext &c) -> rio::fut::res<ClientContext> {
+                [](ClientContext& c) -> rio::fut::res<ClientContext> {
                     using rio::fut::res;
                     auto r = rio::try_read(c.sock, c.buf);
 
@@ -39,7 +41,25 @@ auto make_echo_client(ClientContext ctx)
 
                     return res<ClientContext>::ready(std::move(c));
                 }
-            ).then([](ClientContext c) {
+            ).timeout_with(
+                std::chrono::seconds(timeout_seconds),
+                [] (ClientContext c) { // Becuase this is transfer of ownership state is moved, either accept by value or as r value: ClientContext&&
+                    std::println("Client {} timed out. Sending goodbye...", c.addr);
+
+                    return rio::fut::make(
+                        std::move(c),
+                        [](ClientContext& c) -> rio::fut::res<ClientContext> {
+                            std::string_view msg = "Timeout: You were too slow! Bye!\n";
+                            auto r = rio::try_write(c.sock, std::span(msg));
+
+                            if (!r && r.error().code == std::errc::operation_would_block)
+                                return rio::fut::res<ClientContext>::pending();
+
+                            return rio::fut::res<ClientContext>::error(std::errc::timed_out);
+                        }
+                    );
+                }
+            ).then([](ClientContext&& c) -> auto { // Becuase this is transfer of ownership state is moved, either accept by value or as r value: ClientContext&&
                 return rio::fut::make(std::move(c),
                     [](ClientContext &c) -> rio::fut::res<ClientContext> {
                         using rio::fut::res;
@@ -75,7 +95,9 @@ auto main() -> int
 
     std::vector<ClientFuture> clients;
 
-    auto acceptor = rio::Future{
+    // Functions that have try return immediately on any error, like here try_accept will retutn on would block.
+    // Same with try_read and try_write.
+    auto acceptor = rio::Future {
         .state = std::move(listener),
         .fn = [](rio::Tcp_socket &l) -> rio::fut::res<ClientContext> {
             rio::address addr{};
@@ -110,7 +132,7 @@ auto main() -> int
             if (session_res.state == rio::fut::status::error)
             {
                 if (session_res.err == std::errc::connection_aborted)
-                    std::println("Client Disconnected: {}", clients[i].state.addr);
+                    std::println("Client Disconnected: {}", clients[i].state.state.addr);
                 else
                     std::println("Error: {}", session_res.err.message());
                 clients[i] = std::move(clients.back());

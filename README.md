@@ -34,12 +34,10 @@ import rio
 
 ### Compile
 ```sh
-clang++  -o main main.cpp -std=c++23 -stdlib=libc++ -fprebuilt-module-path=./bin/pcms/ -fprebuilt-module-path=./bin/std/ -L./bin/libs/ -lrio  -luring
+clang++ -o main main.cpp -std=c++23 -stdlib=libc++ -fprebuilt-module-path=./bin/pcms/ -fprebuilt-module-path=./bin/std/ -L./bin/libs/ -lrio  -luring
+clang++ ./examples/04-future-echo-server.cpp -o main2 -std=c++23 ./bin/libs/librio.a -fprebuilt-module-path=./bin/pcms -fprebuilt-module-path=./bin/std -luring
 
 ```
-## Docs
-
-Read examples in order.
 
 ## Credits
 

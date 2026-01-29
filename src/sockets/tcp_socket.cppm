@@ -309,6 +309,12 @@ auto Tcp_socket::open(const char *ip, uint16_t port, s_opt options) -> result<st
     if (!addr) [[unlikely]]
         return std::unexpected(addr.error());
 
+    if (has(options, s_opt::v6) && addr->family() == AF_INET)
+        return std::unexpected(Err{EINVAL, "IPv6 socket cannot bind IPv4 address"});
+
+    if (has(options, s_opt::v4) && addr->family() == AF_INET6)
+        return std::unexpected(Err{EINVAL, "IPv4 socket cannot bind IPv6 address"});
+
     auto o_res = open(*addr, options);
 
     if (!o_res) [[unlikely]]

@@ -41,7 +41,7 @@ export struct file
 
     static auto open(const char *path, f_mode flags = f_mode::read_only) -> result<file>;
     static auto attach(int raw_fd) -> file;
-    auto detatch() -> void;
+    auto detatch() -> int;
 
     explicit operator bool() const;
 };
@@ -67,6 +67,12 @@ auto file::attach(int raw_fd) -> file
 file::operator bool() const
 {
     return static_cast<bool>(fd);
+}
+
+auto file::detatch() -> int
+{
+    if (fd < 0) return fd;
+    return fd.detatch();
 }
 
 }  // namespace rio

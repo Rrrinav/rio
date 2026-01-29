@@ -6,15 +6,18 @@ int main()
 {
     // Handles are basically fundamental types of rio and a wrapper over FDs.
     // You can initialize them like this using any file descriptors.
-    // rio::handle err(STDERR_FILENO);
+    // auto close() -> void;        just closes fd
+    // auto detatch() -> int;       returns fd and sets fd to -1
+    // auto native_handle() -> int; returns fd.
     rio::handle err{STDERR_FILENO};
     rio::handle out{STDOUT_FILENO};
 
     rio::handle in{STDIN_FILENO};
 
-    // These are implicitly convertible to int but not copyable as handles and close fd using RAII.
+    // These are convertible to int but not copyable as handles and close fd using RAII.
     // so int q = out; is possible but auto q = out; & rio::handle q = out; isnt.
     // Because this makes ownership of files difficult.
+    // Also convertible to bool, returns fd < 0.
 
     // **** Destructor has if (fd < 0) check so, it will close only if fd is valid. Tough choice but I like this more. *****
 
