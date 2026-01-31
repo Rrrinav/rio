@@ -168,24 +168,25 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
     };
     export template <Pollable Fut, typename Fn> Then_impl(Fut, Fn) -> Then_impl<Fut, Fn>;
 
-    export template <typename State, typename BodyFn>
+    export template <typename State, typename Body_fn>
     struct Loop_impl
     {
         using value_type = void;
-        using inner_future_type = std::invoke_result_t<BodyFn &, State &>;
+        using inner_future_type = std::invoke_result_t<Body_fn &, State &>;
+        using function_type = Body_fn;
 
-        State state;
-        BodyFn body_fn;
+        State data;
+        Body_fn body_fn;
         std::optional<inner_future_type> curr_fut{};
 
-        Loop_impl(State s, BodyFn fn) : state(std::move(s)), body_fn(std::move(fn)) {}
+        Loop_impl(State s, Body_fn fn) : data(std::move(s)), body_fn(std::move(fn)) {}
         Loop_impl(Loop_impl &&) = default;
 
         Loop_impl &operator=(Loop_impl &&other) noexcept
         {
             if (this != &other)
             {
-                state = std::move(other.state);
+                data = std::move(other.data);
                 curr_fut = std::move(other.curr_fut);
                 std::destroy_at(&body_fn);
                 std::construct_at(&body_fn, std::move(other.body_fn));
@@ -198,14 +199,14 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
             while (true)
             {
                 if (!curr_fut)
-                    curr_fut.emplace(body_fn(state));
+                    curr_fut.emplace(body_fn(data));
                 auto r = rio::poll(*curr_fut);
                 if (r.state == fut::status::pending)
                     return fut::res<void>::pending();
                 if (r.state == fut::status::error)
                     return fut::res<void>::error(r.err);
                 if constexpr (!std::is_void_v<typename inner_future_type::value_type>)
-                    state = std::move(*r.value);
+                    data = std::move(*r.value);
                 curr_fut.reset();
             }
         }
@@ -217,6 +218,7 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
     struct Timeout_impl
     {
         using value_type = typename F::value_type;
+        using future_type = F;
         F fut;
         std::chrono::steady_clock::time_point deadline;
         bool timed_out = false;
@@ -254,15 +256,17 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
     export template <typename F>
     Timeout_impl(F, std::chrono::steady_clock::time_point) -> Timeout_impl<F>;
 
-    export template <typename F, typename Callback, typename RecoveryFut>
+    export template <typename F, typename Callback, typename Recovery_fut>
     struct Timeout_with_impl
     {
         using value_type = typename F::value_type;
+        using first_future_type = F;
+        using callback_type = Callback;
         F first_fut;
         std::chrono::steady_clock::time_point deadline;
         Callback callback;
         enum class Phase : uint8_t { Normal, Recovery, Done } phase = Phase::Normal;
-        std::optional<RecoveryFut> recovery_fut{};
+        std::optional<Recovery_fut> recovery_fut{};
 
         Timeout_with_impl(F f, std::chrono::steady_clock::time_point t, Callback c) : first_fut(std::move(f)), deadline(t), callback(std::move(c)) {}
         Timeout_with_impl(Timeout_with_impl &&) = default;
@@ -292,7 +296,7 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
                     return r;
                 if (std::chrono::steady_clock::now() >= deadline)
                 {
-                    recovery_fut.emplace(callback(std::move(first_fut.state)));
+                    recovery_fut.emplace(callback(std::move(first_fut.data)));
                     phase = Phase::Recovery;
                 }
                 else

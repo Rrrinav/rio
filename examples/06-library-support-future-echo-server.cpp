@@ -8,7 +8,7 @@ struct Client
     std::vector<char> buf = std::vector<char>(1024);
 };
 
-// we have to manage allocate client to keep address always valid inside uring.
+// we have to allocate client to keep address always valid inside uring.
 auto make_client(rio::context &ctx, rio::Tcp_socket s, rio::address a)
 {
     auto ptr = std::make_unique<Client>(Client{std::move(s), a});
@@ -47,7 +47,7 @@ int main()
         {
             return rio::fut::accept(IO, listener)
                 .then(
-                    [&](rio::fut::AcceptResult res)
+                    [&](rio::fut::Accept_result res)
                     {
                         std::println("New Client: {}", res.address.to_string());
                         clients.push_back(make_client(IO, std::move(res.client), res.address));

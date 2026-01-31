@@ -132,7 +132,7 @@ auto main() -> int
             if (session_res.state == rio::fut::status::error)
             {
                 if (session_res.err == std::errc::connection_aborted)
-                    std::println("Client Disconnected: {}", clients[i].state.state.addr);
+                    std::println("Client Disconnected: {}", clients[i].data.data.addr);
                 else
                     std::println("Error: {}", session_res.err.message());
                 clients[i] = std::move(clients.back());
