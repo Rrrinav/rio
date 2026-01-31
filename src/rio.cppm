@@ -15,6 +15,8 @@ export import :socket;
 export import :context;
 export import :asio;
 export import :futures;
+export import :promise;
+export import :fut.io;
 
 namespace rio {
 export auto kill(rio::handle &h) -> void

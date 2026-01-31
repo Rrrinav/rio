@@ -98,8 +98,8 @@ auto main() -> int
     // Functions that have try return immediately on any error, like here try_accept will retutn on would block.
     // Same with try_read and try_write.
     auto acceptor = rio::Future {
-        .state = std::move(listener),
-        .fn = [](rio::Tcp_socket &l) -> rio::fut::res<ClientContext> {
+        std::move(listener),
+        [](rio::Tcp_socket &l) -> rio::fut::res<ClientContext> {
             rio::address addr{};
             auto r = rio::try_accept(l, addr);
 
