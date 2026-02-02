@@ -132,10 +132,7 @@ export auto read(rio::context &ctx, int fd, std::span<char> buf)
 
 export template <typename HandleT>
 requires requires(HandleT h) { h.fd.native_handle(); }
-auto read(rio::context &ctx, HandleT &h, std::span<char> buf)
-{
-    return read(ctx, h.fd.native_handle(), buf);
-}
+auto read(rio::context &ctx, HandleT &h, std::span<char> buf) { return read(ctx, h.fd.native_handle(), buf); }
 
 export auto write(rio::context &ctx, int fd, std::span<const char> buf)
 {

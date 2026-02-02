@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <ranges>
 #include <vector>
 #include <string>
 #include <string_view>
@@ -145,8 +146,9 @@ std::optional<fs::path> load_cache()
 
 bool build_std_module(const Config &cfg)
 {
-    if (fs::exists(cfg.dir_std / "std.pcm") && !bld_cfg["build-all"])
-        return true;
+    if (!bld_cfg["build-std"])
+        if (fs::exists(cfg.dir_std / "std.pcm") && !bld_cfg["build-all"])
+            return true;
 
     bld::log(bld::Log_type::INFO, "Building Standard Module...");
     fs::path std_cppm;
@@ -343,6 +345,30 @@ int main(int argc, char *argv[])
     BLD_HANDLE_ARGS();
 
     Config cfg;
+    if (bld_cfg["compile"])
+    {
+        std::string input_file = bld_cfg["compile"];
+        if (input_file.size() < 1)
+        {
+            bld::log(bld::Log_type::ERR, "No file provided, use compile=file");
+            return 1;
+        }
+        std::string output_file{};
+        if (!bld_cfg["o"])
+            bld::log(bld::Log_type::WARNING, "No output file provided, you can use '-o=file'.");
+        else
+            output_file = (std::string)bld_cfg["o"];
+
+        bld::Command cmd = { "clang++" };
+        cmd.add_parts(input_file);
+        cmd.add_parts("-o", output_file);
+        cmd.add_parts("-std=c++23", "-luring");
+        cmd.add_parts(cfg.dir_libs.string() + cfg.lib_static);
+        cmd.parts.append_range(cfg.flags_stdlib);
+        cmd.parts.append_range(cfg.get_mod_flags());
+        if (bld::execute(cmd)) return 0;
+        else return 1;
+    }
 
     if (bld_cfg["clean-all"])
     {

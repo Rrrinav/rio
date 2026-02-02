@@ -39,6 +39,11 @@ clang++ ./examples/04-future-echo-server.cpp -o main2 -std=c++23 ./bin/libs/libr
 
 ```
 
+## Notes
+
+- If you are doing incremental builds and clang cries, try `bld -build`. This doesn't build std again.
+- If you want to compile std again too, do `bld -build-all`, but it will compile whole thing again.
+
 ## Credits
 
 [rinav](github.com/rrrinav)
