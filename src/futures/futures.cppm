@@ -483,7 +483,74 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
             [] (For_all_type& f) { return f.poll(); }
         };
     }
+
+    export template <typename... Futs>
+    struct Join_impl
+    {
+        std::tuple<Futs...> futures;
+
+        using value_type = std::tuple<typename Futs::value_type...>;
+
+        std::tuple<std::optional<typename Futs::value_type>...> results;
+
+        Join_impl(Futs... f) : futures(std::move(f)...) {}
+
+        auto poll() -> rio::fut::res<value_type>
+        {
+            bool pending = false;
+            bool error = false;
+            std::error_code ec;
+
+            auto process = [&](auto &fut, auto &res_opt)
+            {
+                if (res_opt.has_value()) return;
+
+                auto r = rio::poll(fut);
+                if (r.state == rio::fut::status::ready)
+                {
+                    if constexpr (std::is_void_v<typename std::decay_t<decltype(fut)>::value_type>)
+                        res_opt.emplace(rio::fut::res<void>::ready());
+                    else
+                        res_opt.emplace(std::move(*r.value));
+                }
+                else if (r.state == rio::fut::status::error)
+                {
+                    error = true;
+                    ec = r.err;
+                }
+                else
+                {
+                    pending = true;
+                }
+            };
+
+            std::apply( [&](auto &...f_args) {
+                std::apply( [&](auto &...r_args) {
+                    (process(f_args, r_args), ...);
+                }, results);
+            }, futures);
+
+            if (error)
+                return rio::fut::res<value_type>::error(ec);
+            if (pending)
+                return rio::fut::res<value_type>::pending();
+
+            return std::apply( [&](auto &...r_args) { return rio::fut::res<value_type>::ready(std::make_tuple(std::move(*r_args)...)); }, results);
+        }
+
+        friend auto tag_invoke(rio::tag_invoke_impl::poll_t, Join_impl &j) { return j.poll(); }
+    };
+
+    export template <typename... Futs> Join_impl(Futs...) -> Join_impl<Futs...>;
+
+    export template <typename... Futs>
+    auto join(Futs &&...futs)
+    {
+        using JoinType = Join_impl<std::decay_t<Futs>...>;
+        return rio::Future{JoinType{std::forward<Futs>(futs)...}, [](JoinType &j) { return j.poll(); }};
     }
+
+    } // namespace fut
 
     namespace fut {
 
