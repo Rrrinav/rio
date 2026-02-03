@@ -109,7 +109,7 @@ struct Accept_req
         else
         {
             self->client_addr.len = self->addr_len;
-            p.resolve(Accept_result{.client = rio::Tcp_socket::attach(res), .address = std::move(self->client_addr)});
+            p.resolve(Accept_result{.client = rio::Tcp_socket::attach(res), .address = self->client_addr});
         }
         self->state->io_done = true;
         if (self->state->future_dropped)

@@ -73,7 +73,8 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
     }
 
     export template <typename State, typename PollFn>
-    struct Future {
+    struct Future
+    {
         using state_type = State;
         using value_type = typename std::invoke_result_t<PollFn &, State &>::value_type;
 
@@ -83,8 +84,10 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         Future(State s, PollFn f) : data(std::move(s)), fn(std::move(f)) {}
         Future(Future &&) = default;
 
-        Future &operator=(Future &&other) noexcept {
-            if (this != &other) {
+        Future &operator=(Future &&other) noexcept
+        {
+            if (this != &other)
+            {
                 data = std::move(other.data);
                 std::destroy_at(&fn);
                 std::construct_at(&fn, std::move(other.fn));
@@ -95,9 +98,12 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         fut::res<value_type> poll() { return fn(data); }
         friend auto tag_invoke(poll_t, Future &f) { return f.poll(); }
 
-        template <typename Fn> auto then(Fn &&fn) &&;
-        template <typename Rep, typename Period> auto timeout(std::chrono::duration<Rep, Period> d) &&;
-        template <typename Rep, typename Period, typename Callback> auto timeout_with(std::chrono::duration<Rep, Period> d, Callback cb) &&;
+        template <typename Fn>
+        auto then(Fn &&fn) &&;
+        template <typename Rep, typename Period>
+        auto timeout(std::chrono::duration<Rep, Period> d) &&;
+        template <typename Rep, typename Period, typename Callback>
+        auto timeout_with(std::chrono::duration<Rep, Period> d, Callback cb) &&;
     };
     export template <typename State, typename PollFn> Future(State, PollFn) -> Future<State, PollFn>;
 
@@ -106,9 +112,6 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         template <typename Fn> struct next_fut_t<Fn, void> { using type = std::invoke_result_t<Fn &>; };
     }
 
-    // =================================================================================================
-    // 4. COMBINATOR DEFINITIONS
-    // =================================================================================================
     namespace fut {
 
     export template <Pollable F, typename Fn>
@@ -337,12 +340,16 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         std::optional<storage_type2> r2{};
 
         Both_impl(Fut1 f1, Fut2 f2) : fut1(std::move(f1)), fut2(std::move(f2)) {}
+        Both_impl(Both_impl&) = delete;
+        Both_impl& operator=(Both_impl&) = delete;
         Both_impl(Both_impl&&) = default;
 
-        Both_impl&operator=(Both_impl&&other) noexcept {
-            if (this != &other) {
-                fut1= std::move(other.fut1);
-                fut2= std::move(other.fut2);
+        Both_impl &operator=(Both_impl &&other) noexcept
+        {
+            if (this != &other)
+            {
+                fut1 = std::move(other.fut1);
+                fut2 = std::move(other.fut2);
             }
             return *this;
         }
@@ -389,6 +396,93 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
     };
     export template <typename F1, typename F2>
     Both_impl(F1, F2) -> Both_impl<F1, F2>;
+
+    export template <typename Container, typename PollFn>
+    struct For_all
+    {
+        using State = typename Container::value_type;
+        using Res = std::invoke_result_t<PollFn &, State &>;
+        using Val = typename Res::value_type;
+
+        Container states;
+        PollFn fn;
+        std::vector<std::optional<Res>> results;
+
+        For_all(Container c, PollFn f) : states(std::move(c)), fn(std::move(f)) { results.resize(states.size()); }
+
+        For_all(For_all&) = delete;
+        For_all& operator=(For_all&) = delete;
+        For_all(For_all&&) = default;
+
+        For_all&operator=(For_all&&other) noexcept
+        {
+            if (this != &other)
+            {
+                states = std::move(other.states);
+                results = std::move(other.results);
+                std::destroy_at(&fn);
+                std::construct_at(&fn, other.fn);
+            }
+            return *this;
+        }
+
+        void set_states(Container c)
+        {
+            states = std::move(c);
+            results.assign(states.size(), std::nullopt);
+        }
+
+        auto poll() -> rio::fut::res<std::vector<Val>>
+        {
+            auto active_tasks =
+                std::views::zip(states, results) | std::views::filter([](const auto &pair) { return !std::get<1>(pair).has_value(); });
+
+            bool pending = false;
+
+            for (auto &&[state, res_opt] : active_tasks)
+            {
+                auto r = fn(state);
+
+                if (r.state != rio::fut::status::pending)
+                    res_opt.emplace(std::move(r));
+                else
+                    pending = true;
+            }
+
+            if (pending)
+                return rio::fut::res<std::vector<Val>>::pending();
+
+            for (auto &r : results)
+                if (r->state == rio::fut::status::error)
+                    return rio::fut::res<std::vector<Val>>::error(r->err);
+
+            if constexpr (std::is_void_v<Val>)
+                return rio::fut::res<std::vector<Val>>::ready();
+            else
+            {
+                std::vector<Val> final_vec;
+                final_vec.reserve(results.size());
+                for (auto &r : results) final_vec.push_back(std::move(*r->value));
+                return rio::fut::res<std::vector<Val>>::ready(std::move(final_vec));
+            }
+        }
+
+        friend auto tag_invoke(rio::tag_invoke_impl::poll_t, For_all &f) { return f.poll(); }
+    };
+
+    export template <typename Container, typename PollFn>
+    For_all(Container, PollFn) -> For_all<Container, PollFn>;
+
+    export template <typename Container, typename PollFn>
+    auto for_all(Container&& c, PollFn&& f)
+    {
+        using For_all_type = For_all<std::decay_t<Container>, std::decay_t<PollFn>>;
+
+        return rio::Future {
+            For_all_type{std::move(c), std::move(f)},
+            [] (For_all_type& f) { return f.poll(); }
+        };
+    }
     }
 
     namespace fut {
