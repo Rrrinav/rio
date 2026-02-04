@@ -317,7 +317,7 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
 
     struct Monostate {};
     template <typename T>
-    using NonVoid = std::conditional_t<std::is_void_v<T>, Monostate, T>;
+    using non_void_t = std::conditional_t<std::is_void_v<T>, Monostate, T>;
 
     export template <typename Fut1, typename Fut2>
     struct Both_impl
@@ -331,8 +331,8 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         using value_type1 = typename res_type1::value_type;
         using value_type2 = typename res_type2::value_type;
 
-        using storage_type1 = NonVoid<value_type1>;
-        using storage_type2 = NonVoid<value_type2>;
+        using storage_type1 = non_void_t<value_type1>;
+        using storage_type2 = non_void_t<value_type2>;
 
         using value_type = std::pair<value_type1, value_type2>;
 
@@ -550,6 +550,61 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         return rio::Future{JoinType{std::forward<Futs>(futs)...}, [](JoinType &j) { return j.poll(); }};
     }
 
+    export template <typename... Futs>
+    struct First_of_impl
+    {
+        std::tuple<Futs...> futures;
+
+        using value_type = std::variant<std::conditional_t<std::is_void_v<typename Futs::value_type>, std::monostate, typename Futs::value_type>...>;
+
+        First_of_impl(Futs... f) : futures(std::move(f)...) {}
+
+        auto poll() -> rio::fut::res<value_type>
+        {
+            std::optional<rio::fut::res<value_type>> winner;
+
+            auto process = [&]<std::size_t I>(auto &fut) {
+                if (winner) return;
+
+                auto r = rio::poll(fut);
+
+                if (r.state == rio::fut::status::ready)
+                {
+                    if constexpr (std::is_void_v<typename std::decay_t<decltype(fut)>::value_type>)
+                        winner.emplace(rio::fut::res<value_type>::ready(value_type(std::in_place_index<I>)));
+                    else
+                        winner.emplace(rio::fut::res<value_type>::ready(value_type(std::in_place_index<I>, std::move(*r.value))));
+                }
+                else if (r.state == rio::fut::status::error)
+                {
+                    winner.emplace(rio::fut::res<value_type>::error(r.err));
+                }
+            };
+
+            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                (process.template operator()<Is>(std::get<Is>(futures)), ...);
+            }(std::make_index_sequence<sizeof...(Futs)>{});
+
+            if (winner)
+                return std::move(*winner);
+            return rio::fut::res<value_type>::pending();
+        }
+
+        friend auto tag_invoke(rio::tag_invoke_impl::poll_t, First_of_impl &r) { return r.poll(); }
+    };
+
+    export template <typename... Futs>
+    First_of_impl(Futs...) -> First_of_impl<Futs...>;
+
+    export template <typename... Futs>
+    auto first_of(Futs &&...futs)
+    {
+        using Race_type = First_of_impl<std::decay_t<Futs>...>;
+        return rio::Future {
+            Race_type{std::forward<Futs>(futs)...},
+            [](Race_type &r) { return r.poll(); }
+        };
+    }
     } // namespace fut
 
     namespace fut {

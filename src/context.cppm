@@ -86,9 +86,16 @@ export struct context
     {
         io_uring_cqe *cqe;
 
-        // Wait for at least 1 completion
+        // If no completions, return
         if (io_uring_wait_cqe(&ring, &cqe) < 0)
             return;
+
+        try_poll();
+    }
+
+    void try_poll()
+    {
+        io_uring_cqe *cqe;
 
         // Process all available completions in the batch
         unsigned head;

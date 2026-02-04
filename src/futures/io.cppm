@@ -165,4 +165,83 @@ export auto accept(rio::context &ctx, rio::Tcp_socket &listener)
     return rio::Future(Async_handle{s}, Async_poller{});
 }
 
+struct Timer_req
+{
+    rio::internals::uring_request_header header;
+    Async_state<void> *state;
+    __kernel_timespec ts;
+
+    static void on_complete(rio::internals::uring_request_header *ptr, int res)
+    {
+        auto *self = reinterpret_cast<Timer_req *>(ptr);
+        rio::Promise<Async_state<void>> p{.state = self->state};
+
+        // io_uring returns -ETIME if the timer expired successfully.
+        if (res == -ETIME || res == 0)
+        {
+            p.resolve();
+        }
+        else if (res == -ECANCELED)
+        {
+            // If we implement cancellation later
+            p.reject(std::make_error_code(std::errc::operation_canceled));
+        }
+        else
+        {
+            p.reject(std::error_code(-res, std::system_category()));
+        }
+
+        // Cleanup
+        self->state->io_done = true;
+        if (self->state->future_dropped)
+            delete self->state;
+        delete self;
+    }
+};
+
+export template <typename Rep, typename Period>
+auto wake_up_after(rio::context &ctx, std::chrono::duration<Rep, Period> d)
+{
+    using namespace std::chrono;
+
+    auto sec = duration_cast<seconds>(d);
+    auto nsec = duration_cast<nanoseconds>(d - sec);
+
+    auto *s = new Async_state<void>();
+
+    auto *req = new Timer_req{.header = {.call = &Timer_req::on_complete},
+        .state = s,
+        .ts = {.tv_sec = static_cast<long long>(sec.count()), .tv_nsec = static_cast<long long>(nsec.count())}};
+
+    auto *sqe = ctx.sqe();
+
+    io_uring_prep_timeout(sqe, &req->ts, 0, 0);
+    io_uring_sqe_set_data(sqe, &req->header);
+
+    ctx.submit();
+
+    return rio::Future(Async_handle{s}, Async_poller{});
+}
+
+export template <typename Fut, typename Rep, typename Period>
+auto stop_after(rio::context &ctx, Fut &&f, std::chrono::duration<Rep, Period> d)
+{
+    auto timer = rio::fut::wake_up_after(ctx, d);
+
+    return first_of(std::move(f), std::move(timer)).then([](auto result_var) {
+        using ValT = typename std::decay_t<Fut>::value_type;
+
+        rio::fut::res<ValT> outcome;
+
+        if (result_var.index() == 0)
+            if constexpr (std::is_void_v<ValT>)
+                outcome = rio::fut::res<ValT>::ready();
+            else
+                outcome = rio::fut::res<ValT>::ready(std::move(std::get<0>(result_var)));
+        else
+            outcome = rio::fut::res<ValT>::error(std::make_error_code(std::errc::timed_out));
+
+        return rio::fut::make(std::move(outcome), [](rio::fut::res<ValT> &s) { return std::move(s); });
+    });
+}
 }  // namespace rio::fut

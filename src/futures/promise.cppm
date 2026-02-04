@@ -60,6 +60,34 @@ struct Promise
             return rio::fut::res<T>::pending();
         }
     };
+
+    template <>
+    struct State<void>
+    {
+        using value_type = void;
+
+        std::error_code error{};
+        bool is_ready = false;
+
+        void resolve() { is_ready = true; }
+
+        void reject(std::error_code ec)
+        {
+            error = ec;
+            is_ready = true;
+        }
+
+        auto poll() -> rio::fut::res<void>
+        {
+            if (is_ready)
+            {
+                if (error)
+                    return rio::fut::res<void>::error(error);
+                return rio::fut::res<void>::ready();
+            }
+            return rio::fut::res<void>::pending();
+        }
+    };
     }  // namespace promise
 
     export namespace promise {
