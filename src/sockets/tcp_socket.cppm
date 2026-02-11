@@ -61,7 +61,7 @@ export struct Tcp_socket
     rio::handle fd{};
 
     Tcp_socket() = default;
-    explicit Tcp_socket(rio::handle &&h) : fd(std::move(h)) {}
+    explicit Tcp_socket(rio::handle &&h) noexcept : fd(std::move(h)) {}
 
     static auto open(s_opt options) -> result<Tcp_socket>;
     static auto open(const rio::address &address, s_opt options) -> result<Tcp_socket>;
@@ -72,6 +72,76 @@ export struct Tcp_socket
 
     static auto attach(int raw_fd) -> Tcp_socket;
     explicit operator bool() const;
+
+    enum class shut : int { read = SHUT_RD, write = SHUT_WR, both = SHUT_RDWR };
+
+    auto shutdown(shut how = shut::write) -> result<void> {
+        if (::shutdown(fd.native_handle(), static_cast<int>(how)) == -1)
+            return std::unexpected(Err{errno, "Socket shutdown failed"});
+        return {};
+    }
+    auto local_endpoint() const -> result<rio::address>
+    {
+        rio::address addr;
+        addr.len = sizeof(addr.storage);
+        if (::getsockname(fd.native_handle(), &addr.storage.general, &addr.len) == -1)
+            return std::unexpected(Err{errno, "getsockname failed"});
+        return addr;
+    }
+    auto remote_endpoint() const -> result<rio::address>
+    {
+        rio::address addr;
+        addr.len = sizeof(addr.storage);
+        if (::getpeername(fd.native_handle(), &addr.storage.general, &addr.len) == -1)
+            return std::unexpected(Err{errno, "getpeername failed"});
+        return addr;
+    }
+    template <typename T>
+    auto set_option(int level, int optname, T value) -> result<void>
+    {
+        if (::setsockopt(fd.native_handle(), level, optname, &value, sizeof(value)) == -1)
+            return std::unexpected(Err{errno, "setsockopt failed"});
+        return {};
+    }
+    auto set_reuse_address(bool enable) -> result<void>
+    {
+        int val = enable ? 1 : 0;
+        if (auto r = set_option(SOL_SOCKET, SO_REUSEADDR, val); !r)
+            return r;
+        return set_option(SOL_SOCKET, SO_REUSEPORT, val);
+    }
+
+    auto set_nodelay(bool enable) -> result<void> { return set_option(IPPROTO_TCP, TCP_NODELAY, enable ? 1 : 0); }
+
+    auto set_keepalive(bool enable) -> result<void> { return set_option(SOL_SOCKET, SO_KEEPALIVE, enable ? 1 : 0); }
+
+    auto set_policy(bool blocking) -> result<void>
+    {
+        int flags = ::fcntl(fd.native_handle(), F_GETFL, 0);
+        if (flags == -1)
+            return std::unexpected(Err{errno, "fcntl(F_GETFL) failed"});
+
+        if (blocking)
+            flags &= ~O_NONBLOCK;
+        else
+            flags |= O_NONBLOCK;
+
+        if (::fcntl(fd.native_handle(), F_SETFL, flags) == -1)
+            return std::unexpected(Err{errno, "fcntl(F_SETFL) failed"});
+        return {};
+    }
+
+    auto set_blocking() -> result<void> { return set_policy(true); }
+    auto set_nonblocking() -> result<void> { return set_policy(false); }
+
+    template <typename T>
+    auto get_option(int level, int optname, T &value) const -> result<void>
+    {
+        socklen_t len = sizeof(T);
+        if (::getsockopt(fd.native_handle(), level, optname, &value, &len) == -1)
+            return std::unexpected(Err{errno, "getsockopt failed"});
+        return {};
+    }
 };
 
 auto Tcp_socket::open(s_opt options) -> result<Tcp_socket>
