@@ -25,7 +25,7 @@ export enum class s_opt : uint32_t {
     nonblock        = 1 << 3,
     cloexec         = 1 << 4,
     reuse           = 1 << 5,    // REUSEADDR + REUSEPORT
-    nodelay         = 1 << 6,  // TCP_NODELAY
+    nodelay         = 1 << 6,    // TCP_NODELAY
     keepalive       = 1 << 7,
 
     // IPv4 Only

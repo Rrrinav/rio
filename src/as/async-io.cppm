@@ -125,7 +125,7 @@ void write(rio::context &context, rio::Tcp_socket &sock, std::span<const char> b
     using request_type = uring_request<std::decay_t<Fn>, T>;
 
     auto *req = new request_type{
-        .header = {.call = &request_type::on_complete},
+        .header = { .call = &request_type::on_complete },
         .type = Req_type::Write,
         .handle = sock.fd.native_handle(),
         .io_v = iovec{.iov_base = const_cast<char *>(buffer.data()), .iov_len = buffer.size()},
@@ -149,8 +149,8 @@ void accept(rio::context &context, rio::Tcp_socket &listener, Fn &&on_accept, T 
 
     using request_type = uring_accept_request<std::decay_t<Fn>, T>;
 
-    auto *req = new request_type{
-        .header = {.call = &request_type::on_complete},
+    auto *req = new request_type {
+        .header = { .call = &request_type::on_complete },
         .context = context,
         .user_data = user,
         .callback = std::forward<Fn>(on_accept),
