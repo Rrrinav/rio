@@ -41,7 +41,7 @@ struct Config
     const std::string archiver = "ar";
 
     // Flags - Enforce libc++ globally
-    const std::vector<std::string> flags_common = {"-std=c++23", "-stdlib=libc++", "-Wall", "-Wextra", "-O2", "-fPIC", "-g"};
+    const std::vector<std::string> flags_common = {"-std=c++23", "-Wall", "-Wextra", "-O2", "-fPIC", "-g"};
 
     // Linker Flags
     const std::vector<std::string> flags_linker = {"-stdlib=libc++", "-luring", "-lc++abi"};
@@ -173,7 +173,7 @@ bool build_std_module(const Config &cfg)
 
     std::vector<std::string> args = {cfg.compiler};
     args.insert(args.end(), cfg.flags_common.begin(), cfg.flags_common.end());
-
+    args.push_back("-stdlib=libc++");
     std::vector<std::string> cmd1 = args;
     cmd1.insert(cmd1.end(), {"--precompile", std_cppm.string(), "-o", (cfg.dir_std / "std.pcm").string()});
     if (!bld::execute(make_cmd(cmd1)).normal)
@@ -366,11 +366,16 @@ int main(int argc, char *argv[])
     BLD_HANDLE_ARGS();
     Config cfg;
 
-    if (bld_cfg["clean"] || bld_cfg["clean-all"])
+    if (bld_cfg["clean"])
+    {
+        bld::fs::remove_dir(cfg.dir_libs);
+        bld::fs::remove_dir(cfg.dir_obj);
+        bld::fs::remove_dir(cfg.dir_pcm);
+        return 0;
+    }
+    if (bld_cfg["clean-all"])
     {
         bld::fs::remove_dir(cfg.dir_bin);
-        if (!bld_cfg["clean-all"])
-            fs::create_directories(cfg.dir_std);
         return 0;
     }
 
@@ -441,6 +446,7 @@ int main(int argc, char *argv[])
 
         std::vector<std::string> cmd_pcm = {cfg.compiler};
         cmd_pcm.insert(cmd_pcm.end(), cfg.flags_common.begin(), cfg.flags_common.end());
+        cmd_pcm.push_back("-stdlib=libc++");
         cmd_pcm.push_back("--precompile");
         cmd_pcm.push_back(mod.file.string());
         cmd_pcm.push_back("-o");

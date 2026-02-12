@@ -8,6 +8,8 @@ export module rio;
 import std;
 
 export import :io;
+export import :io.tcp_socket;
+export import :io.file;
 export import :utils;
 export import :handle;
 export import :file;
@@ -17,6 +19,8 @@ export import :asio;
 export import :futures;
 export import :promise;
 export import :fut.io;
+export import :fut.tcp.io;
+export import :fut.file.io;
 
 namespace rio {
 export auto kill(rio::handle &h) -> void

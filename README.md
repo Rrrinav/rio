@@ -47,3 +47,7 @@ clang++ ./examples/04-future-echo-server.cpp -o main2 -std=c++23 ./bin/libs/libr
 ## Credits
 
 [rinav](github.com/rrrinav)
+
+## Todo
+
+* [ ] Fix futures io functions.

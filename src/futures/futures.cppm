@@ -37,8 +37,8 @@ namespace rio {
 
     namespace tag_invoke_impl {
         // If compiler finds this during resolution, then the thing you are trying to poll is not a valid future.
-        // Some error.
         void tag_invoke();
+
         export struct poll_t
         {
             template <typename T>
@@ -49,6 +49,7 @@ namespace rio {
             }
         };
     }
+
 using tag_invoke_impl::poll_t;
 export inline constexpr poll_t poll{};
 
@@ -72,19 +73,25 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         export template <typename State, typename BodyFn> struct Loop_impl;
     }
 
-    export template <typename State, typename PollFn>
+    export template <typename State, typename Poll_fn>
     struct Future
     {
         using state_type = State;
-        using value_type = typename std::invoke_result_t<PollFn &, State &>::value_type;
+        using value_type = typename std::invoke_result_t<Poll_fn &, State &>::value_type;
 
         State data;
-        PollFn fn;
+        Poll_fn fn;
 
-        Future(State s, PollFn f) : data(std::move(s)), fn(std::move(f)) {}
-        Future(Future &&) = default;
+        Future(State s, Poll_fn f) : data(std::move(s)), fn(std::move(f)) {}
+        Future(Future &&) noexcept(
+            std::is_nothrow_move_constructible_v<State> &&
+            std::is_nothrow_move_constructible_v<Poll_fn>
+        ) = default;
 
-        Future &operator=(Future &&other) noexcept
+        Future &operator=(Future &&other) noexcept(
+            std::is_nothrow_move_constructible_v<State> &&
+            std::is_nothrow_move_constructible_v<Poll_fn>
+        )
         {
             if (this != &other)
             {
@@ -114,22 +121,28 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
 
     namespace fut {
 
-    export template <Pollable F, typename Fn>
+    export template <Pollable Fut, typename Fn>
     struct Then_impl
     {
-        using input_type       = typename F::value_type;
+        using input_type       = typename Fut::value_type;
         using next_future_type = typename detail::next_fut_t<Fn, input_type>::type;
         using value_type       = typename next_future_type::value_type;
 
-        F first_fut;
+        Fut first_fut;
         Fn fn;
         enum class Phase : uint8_t { First, Next, Done } phase = Phase::First;
         std::optional<next_future_type> next{};
 
-        Then_impl(F f, Fn func) : first_fut(std::move(f)), fn(std::move(func)) {}
-        Then_impl(Then_impl &&) = default;
+        Then_impl(Fut f, Fn func) : first_fut(std::move(f)), fn(std::move(func)) {}
+        Then_impl(Then_impl &&) noexcept(
+            std::is_nothrow_move_constructible_v<Fut> &&
+            std::is_nothrow_move_constructible_v<Fn>
+        )= default;
 
-        Then_impl &operator=(Then_impl &&other) noexcept
+        Then_impl &operator=(Then_impl &&other) noexcept(
+            std::is_nothrow_move_constructible_v<Fut> &&
+            std::is_nothrow_move_constructible_v<Fn>
+        )
         {
             if (this != &other)
             {
@@ -183,7 +196,7 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         std::optional<inner_future_type> curr_fut{};
 
         Loop_impl(State s, Body_fn fn) : data(std::move(s)), body_fn(std::move(fn)) {}
-        Loop_impl(Loop_impl &&) = default;
+        Loop_impl(Loop_impl &&) noexcept = default;
 
         Loop_impl &operator=(Loop_impl &&other) noexcept
         {
@@ -217,17 +230,17 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
     };
     export template <typename State, typename BodyFn> Loop_impl(State, BodyFn) -> Loop_impl<State, BodyFn>;
 
-    export template <typename F>
+    export template <typename Fut>
     struct Timeout_impl
     {
-        using value_type = typename F::value_type;
-        using future_type = F;
-        F fut;
+        using value_type = typename Fut::value_type;
+        using future_type = Fut;
+        Fut fut;
         std::chrono::steady_clock::time_point deadline;
         bool timed_out = false;
 
-        Timeout_impl(F f, std::chrono::steady_clock::time_point t) : fut(std::move(f)), deadline(t) {}
-        Timeout_impl(Timeout_impl &&) = default;
+        Timeout_impl(Fut f, std::chrono::steady_clock::time_point t) : fut(std::move(f)), deadline(t) {}
+        Timeout_impl(Timeout_impl &&) noexcept = default;
 
         Timeout_impl &operator=(Timeout_impl &&other) noexcept
         {
@@ -272,7 +285,7 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         std::optional<Recovery_fut> recovery_fut{};
 
         Timeout_with_impl(F f, std::chrono::steady_clock::time_point t, Callback c) : first_fut(std::move(f)), deadline(t), callback(std::move(c)) {}
-        Timeout_with_impl(Timeout_with_impl &&) = default;
+        Timeout_with_impl(Timeout_with_impl &&) noexcept = default;
 
         Timeout_with_impl &operator=(Timeout_with_impl &&other) noexcept
         {
@@ -342,7 +355,7 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         Both_impl(Fut1 f1, Fut2 f2) : fut1(std::move(f1)), fut2(std::move(f2)) {}
         Both_impl(Both_impl&) = delete;
         Both_impl& operator=(Both_impl&) = delete;
-        Both_impl(Both_impl&&) = default;
+        Both_impl(Both_impl&&) noexcept = default;
 
         Both_impl &operator=(Both_impl &&other) noexcept
         {
@@ -397,22 +410,22 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
     export template <typename F1, typename F2>
     Both_impl(F1, F2) -> Both_impl<F1, F2>;
 
-    export template <typename Container, typename PollFn>
+    export template <typename Container, typename Poll_fn>
     struct For_all
     {
         using State = typename Container::value_type;
-        using Res = std::invoke_result_t<PollFn &, State &>;
+        using Res = std::invoke_result_t<Poll_fn &, State &>;
         using Val = typename Res::value_type;
 
         Container states;
-        PollFn fn;
+        Poll_fn fn;
         std::vector<std::optional<Res>> results;
 
-        For_all(Container c, PollFn f) : states(std::move(c)), fn(std::move(f)) { results.resize(states.size()); }
+        For_all(Container c, Poll_fn f) : states(std::move(c)), fn(std::move(f)) { results.resize(states.size()); }
 
         For_all(For_all&) = delete;
         For_all& operator=(For_all&) = delete;
-        For_all(For_all&&) = default;
+        For_all(For_all&&) noexcept = default;
 
         For_all&operator=(For_all&&other) noexcept
         {
@@ -470,13 +483,13 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
         friend auto tag_invoke(rio::tag_invoke_impl::poll_t, For_all &f) { return f.poll(); }
     };
 
-    export template <typename Container, typename PollFn>
-    For_all(Container, PollFn) -> For_all<Container, PollFn>;
+    export template <typename Container, typename Poll_fn>
+    For_all(Container, Poll_fn) -> For_all<Container, Poll_fn>;
 
-    export template <typename Container, typename PollFn>
-    auto for_all(Container&& c, PollFn&& f)
+    export template <typename Container, typename Poll_fn>
+    auto for_all(Container&& c, Poll_fn&& f)
     {
-        using For_all_type = For_all<std::decay_t<Container>, std::decay_t<PollFn>>;
+        using For_all_type = For_all<std::decay_t<Container>, std::decay_t<Poll_fn>>;
 
         return rio::Future {
             For_all_type{std::move(c), std::move(f)},
@@ -609,10 +622,10 @@ concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_
 
     namespace fut {
 
-    export template <typename State, typename Fn>
-    auto make(State &&s, Fn &&fn)
+    export template <typename State, typename Poll_fn>
+    auto make(State &&s, Poll_fn &&fn)
     {
-        return Future<std::decay_t<State>, std::decay_t<Fn>>{std::forward<State>(s), std::forward<Fn>(fn)};
+        return Future<std::decay_t<State>, std::decay_t<Poll_fn>>{std::forward<State>(s), std::forward<Poll_fn>(fn)};
     }
 
     export template <typename T>
@@ -671,4 +684,4 @@ auto Future<S, P>::timeout_with(std::chrono::duration<Rep, Period> d, Callback c
     return fut::make(T{std::move(*this), std::chrono::steady_clock::now() + d, std::move(cb)}, [](T &s) { return s.poll(); });
 }
 
-}
+} // namespace rio

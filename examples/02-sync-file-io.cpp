@@ -37,7 +37,7 @@ int main()
             F = std::move(res.value());
         }
 
-        if (auto res = rio::io::read_str(F, str); !res)
+        if (auto res = rio::io::read_all(F, str); !res)
         {
             rio::io::write(err, std::format("{}\n", res.error()));
             return 1;
