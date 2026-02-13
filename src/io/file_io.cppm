@@ -95,7 +95,7 @@ export auto read_all(const rio::file &f) -> result<std::string>
         return std::unexpected(rio::Err{ENOMEM, "Failed to allocate file buffer"});
     }
 
-    if (auto res = rio::io::read_exactly(f.fd.native_handle(), std::span{out}); !res)
+    if (auto res = rio::io::read_till_full(f.fd.native_handle(), std::span{out}); !res)
         return std::unexpected(res.error());
 
     return out;
