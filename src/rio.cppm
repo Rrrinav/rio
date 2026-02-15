@@ -21,6 +21,7 @@ export import :promise;
 export import :fut.io;
 export import :fut.tcp.io;
 export import :fut.file.io;
+export import :buff_reader;
 
 namespace rio {
 export auto kill(rio::handle &h) -> void

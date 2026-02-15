@@ -17,8 +17,8 @@ concept Handle_like_c = requires(T t) {
     { t.fd.native_handle() } -> std::convertible_to<int>;
 };
 
-constexpr int get_fd(const Handle_like_c auto &h) { return h.fd.native_handle(); }
-constexpr int get_fd(int fd) { return fd; }
+constexpr inline int get_fd(const Handle_like_c auto &h) { return h.fd.native_handle(); }
+constexpr inline int get_fd(int fd) { return fd; }
 
 export auto read(int fd, std::span<char> buf) -> result<size_t>
 {
