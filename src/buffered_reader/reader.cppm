@@ -33,8 +33,7 @@ namespace rio {
                 return res ? std::optional{*res} : std::nullopt;
             }
         #endif
-
-            return s.read(dest, max);
+            else return s.read(dest, max);
         }
     };
 
@@ -444,6 +443,77 @@ private:
             }
         }
     }
+    /// \brief Reads until delimiter or until the output buffer is full.
+    ///
+    /// \param reader The source reader.
+    /// \param delimiter The char to stop at.
+    /// \param out The destination buffer.
+    /// \return Number of bytes written to 'out', or error if buffer fills before delimiter.
+    export template <typename Reader>
+    std::size_t read_till(Reader &reader, char delimiter, std::span<char> out)
+    {
+        std::size_t total_written = 0;
+
+        while (true)
+        {
+            // 1. Check if we ran out of space
+            if (total_written >= out.size())
+                return total_written;
+
+            // 2. Peek at data
+            auto view = reader.peek();
+            if (view.empty())
+                return total_written;
+
+            // 3. Search for delimiter in the current chunk
+            const void *match = std::memchr(view.data(), delimiter, view.size());
+
+            std::size_t chunk_len;
+            bool found = false;
+
+            if (match)
+            {
+                // Found it! Calculate length up to delimiter.
+                auto *match_ptr = static_cast<const std::uint8_t *>(match);
+                chunk_len = match_ptr - view.data();
+                found = true;
+            }
+            else
+            {
+                // Not found in this chunk. Take everything.
+                chunk_len = view.size();
+            }
+
+            // 4. Check if this chunk fits in remaining output space
+            std::size_t space_left = out.size() - total_written;
+
+            if (chunk_len > space_left)
+            {
+                // It doesn't fit!
+                // Copy what we can, then return error.
+                std::memcpy(out.data() + total_written, view.data(), space_left);
+                reader.advance(space_left);
+                return total_written;
+            }
+
+            // 5. Copy the data
+            std::memcpy(out.data() + total_written, view.data(), chunk_len);
+            total_written += chunk_len;
+
+            // 6. Advance reader
+            if (found)
+            {
+                // Consume data + delimiter
+                reader.advance(chunk_len + 1);
+                return total_written;
+            }
+            else
+            {
+                // Consume data only (loop to get next chunk)
+                reader.advance(chunk_len);
+            }
+        }
+    }
 
     /// \brief Load a value of type T from the stream in binary format.
     ///
@@ -462,10 +532,7 @@ private:
     /// \brief Parse a value of type T from text (e.g. "123", "45.6").
     /// \return The parsed value or an error code.
     export template <typename T, typename Reader>
-    [[nodiscard]] std::expected<T, std::errc> parse(Reader &reader)
-    {
-        return buff::parse_traits<T>::parse(reader);
-    }
+    [[nodiscard]] std::expected<T, std::errc> parse(Reader &reader) { return buff::parse_traits<T>::parse(reader); }
 
     } //namespace buff
 
