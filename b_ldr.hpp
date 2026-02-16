@@ -610,6 +610,16 @@ namespace bld
 
   namespace fs
   {
+    struct Cpp_module
+    {
+      std::string name;
+      std::filesystem::path file;
+      std::vector<std::string> imports;
+    };
+
+    /* @brief: scans all the modules in 
+    */
+    std::vector<Cpp_module> scan_modules(const std::string& path);
     /* @brief: Read entire file content into a string
      * @param path: Path to the file
      * @param content: Reference to string where content will be stored
@@ -3996,6 +4006,164 @@ std::string bld::str::replace_all(const std::string &str, const std::string &fro
   }
 
   return result;
+}
+
+std::string read_clean_source(const std::filesystem::path &path)
+{
+  std::ifstream file(path);
+  if (!file)
+    return "";
+
+  std::string src((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  std::string clean;
+  clean.reserve(src.size());
+
+  bool in_block = false;
+  bool in_line = false;
+  bool in_str = false;
+
+  for (size_t i = 0; i < src.size(); ++i)
+  {
+    if (in_block)
+    {
+      if (src[i] == '*' && i + 1 < src.size() && src[i + 1] == '/')
+      {
+        in_block = false;
+        i++;
+        clean += ' ';
+      }
+    }
+    else if (in_line)
+    {
+      if (src[i] == '\n')
+      {
+        in_line = false;
+        clean += '\n';
+      }
+    }
+    else if (in_str)
+    {
+      clean += src[i];
+      if (src[i] == '"' && src[i - 1] != '\\')
+        in_str = false;
+    }
+    else if (src[i] == '/' && i + 1 < src.size() && src[i + 1] == '*')
+    {
+      in_block = true;
+      i++;
+      clean += ' ';
+    }
+    else if (src[i] == '/' && i + 1 < src.size() && src[i + 1] == '/')
+    {
+      in_line = true;
+      i++;
+    }
+    else if (src[i] == '"')
+    {
+      in_str = true;
+      clean += '"';
+    }
+    else
+  {
+      clean += src[i];
+    }
+  }
+  return clean;
+}
+
+std::vector<bld::fs::Cpp_module> bld::fs::scan_modules(const std::string& path) {
+  std::vector<bld::fs::Cpp_module> modules;
+
+  bld::fs::walk_directory(path, [&](bld::fs::Walk_fn_opt &opt) -> bool {
+    if (!std::filesystem::is_regular_file(opt.path) || opt.path.extension() != ".cppm")
+      return true;
+
+    std::string content = read_clean_source(opt.path);
+    if (content.empty())
+      return true;
+
+    // Tokenize
+    std::vector<std::string> tokens;
+    std::string token;
+    for (char c : content)
+    {
+      if (std::isspace(c) || c == ';')
+      {
+        if (!token.empty())
+        {
+          tokens.push_back(token);
+          token.clear();
+        }
+        if (c == ';')
+          tokens.push_back(";");
+      }
+      else
+      {
+        token += c;
+      }
+    }
+
+    bld::fs::Cpp_module mod;
+    mod.file = opt.path;
+    bool found_name = false;
+    std::string primary_name;
+    std::unordered_set<std::string> seen_imports;
+
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+      if (tokens[i] == "export" && i + 2 < tokens.size() && tokens[i + 1] == "module")
+      {
+        mod.name = tokens[i + 2];
+        found_name = true;
+        // Get primary name from partition (rio:part -> rio)
+        size_t colon = mod.name.find(':');
+        primary_name = (colon != std::string::npos) ? mod.name.substr(0, colon) : mod.name;
+      }
+      // Handle: import name; OR export import name;
+      else if (tokens[i] == "import")
+      {
+        // Skip if this is part of "export import"
+        if (i > 0 && tokens[i - 1] == "export")
+          continue;
+
+        if (i + 1 < tokens.size())
+        {
+          std::string dep = tokens[i + 1];
+          // Skip std and empty
+          if (!bld::str::starts_with(dep, "std") && dep != ";" && !dep.empty())
+          {
+            if (bld::str::starts_with(dep, ":") && !primary_name.empty())
+              dep = primary_name + dep;
+
+            // Only add if not seen before
+            if (seen_imports.insert(dep).second)
+              mod.imports.push_back(dep);
+          }
+        }
+      }
+      else if (tokens[i] == "export" && i + 2 < tokens.size() && tokens[i + 1] == "import")
+      {
+        std::string dep = tokens[i + 2];
+        // Skip std and empty
+        if (!bld::str::starts_with(dep, "std") && dep != ";" && !dep.empty())
+        {
+          if (bld::str::starts_with(dep, ":") && !primary_name.empty())
+            dep = primary_name + dep;
+
+          // Only add if not seen before
+          if (seen_imports.insert(dep).second)
+            mod.imports.push_back(dep);
+        }
+      }
+    }
+
+    if (found_name)
+      modules.push_back(std::move(mod));
+    else
+      bld::internal_log(bld::Log_type::WARNING, "Skipped file (no module decl found): " + opt.path.string());
+    return true;
+  });
+  return modules;
 }
 
 #endif  // B_LDR_IMPLEMENTATION

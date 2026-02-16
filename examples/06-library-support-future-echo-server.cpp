@@ -52,7 +52,7 @@ int main()
 
     auto server = rio::fut::loop(std::move(server_sk),
         [&](rio::Tcp_socket &listener) {
-            return rio::fut::accept(IO, listener).then([&](rio::fut::Accept_result res) {
+            return rio::fut::accept(IO, listener).then([&](rio::Tcp_accept_result res) {
                 std::println(" [RIO]: New Client: {}", res.address.to_string());
                 clients.push_back(make_client(IO, std::move(res.client), res.address));
                 return rio::fut::ready(std::move(listener));

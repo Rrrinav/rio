@@ -1,5 +1,4 @@
 #include <cstdlib>
-#include <print>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -7,7 +6,6 @@
 #include <fstream>
 #include <iostream>
 #include <unordered_map>
-#include <unordered_set>
 #include <thread>
 
 #define B_LDR_IMPLEMENTATION
@@ -42,7 +40,6 @@ struct Config
 
     // Flags - Enforce libc++ globally
     const std::vector<std::string> flags_common = {"-std=c++23", "-Wall", "-Wextra", "-O2", "-fPIC", "-g"};
-
     // Linker Flags
     const std::vector<std::string> flags_linker = {"-stdlib=libc++", "-luring", "-lc++abi"};
 
@@ -54,13 +51,10 @@ struct Config
 
 struct Module
 {
-    std::string name;
-    fs::path file;
-    std::vector<std::string> imports;
-
+    bld::fs::Cpp_module module;
     std::string safe_name() const
     {
-        std::string s = name;
+        std::string s = module.name;
         std::replace(s.begin(), s.end(), ':', '-');
         return s;
     }
@@ -190,176 +184,6 @@ bool build_std_module(const Config &cfg)
     return true;
 }
 
-// ==============================================================================
-// 4. ROBUST MODULE SCANNER (Tokenizer)
-// ==============================================================================
-
-// Reads file content, strips comments (// and /* */), and returns clean string
-std::string read_clean_source(const fs::path &path)
-{
-    std::ifstream file(path);
-    if (!file)
-        return "";
-
-    std::string src((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    std::string clean;
-    clean.reserve(src.size());
-
-    bool in_block = false;
-    bool in_line = false;
-    bool in_str = false;
-
-    for (size_t i = 0; i < src.size(); ++i)
-    {
-        if (in_block)
-        {
-            if (src[i] == '*' && i + 1 < src.size() && src[i + 1] == '/')
-            {
-                in_block = false;
-                i++;
-                clean += ' ';
-            }
-        }
-        else if (in_line)
-        {
-            if (src[i] == '\n')
-            {
-                in_line = false;
-                clean += '\n';
-            }
-        }
-        else if (in_str)
-        {
-            clean += src[i];
-            if (src[i] == '"' && src[i - 1] != '\\')
-                in_str = false;
-        }
-        else if (src[i] == '/' && i + 1 < src.size() && src[i + 1] == '*')
-        {
-            in_block = true;
-            i++;
-            clean += ' ';
-        }
-        else if (src[i] == '/' && i + 1 < src.size() && src[i + 1] == '/')
-        {
-            in_line = true;
-            i++;
-        }
-        else if (src[i] == '"')
-        {
-            in_str = true;
-            clean += '"';
-        }
-        else
-        {
-            clean += src[i];
-        }
-    }
-    return clean;
-}
-
-std::vector<Module> scan_modules(const Config &cfg)
-{
-    std::vector<Module> modules;
-
-    bld::fs::walk_directory(cfg.dir_src.string(),
-        [&](bld::fs::Walk_fn_opt &opt) -> bool
-        {
-            if (!fs::is_regular_file(opt.path) || opt.path.extension() != ".cppm")
-                return true;
-
-            std::string content = read_clean_source(opt.path);
-            if (content.empty())
-                return true;
-
-            // Tokenize
-            std::vector<std::string> tokens;
-            std::string token;
-            for (char c : content)
-            {
-                if (std::isspace(c) || c == ';')
-                {
-                    if (!token.empty())
-                    {
-                        tokens.push_back(token);
-                        token.clear();
-                    }
-                    if (c == ';')
-                        tokens.push_back(";");
-                }
-                else
-                {
-                    token += c;
-                }
-            }
-
-            Module mod;
-            mod.file = opt.path;
-            bool found_name = false;
-            std::string primary_name;
-            std::unordered_set<std::string> seen_imports;
-
-            for (size_t i = 0; i < tokens.size(); ++i)
-            {
-                if (tokens[i] == "export" && i + 2 < tokens.size() && tokens[i + 1] == "module")
-                {
-                    mod.name = tokens[i + 2];
-                    found_name = true;
-                    // Get primary name from partition (rio:part -> rio)
-                    size_t colon = mod.name.find(':');
-                    primary_name = (colon != std::string::npos) ? mod.name.substr(0, colon) : mod.name;
-                }
-                // Handle: import name; OR export import name;
-                else if (tokens[i] == "import")
-                {
-                    // Skip if this is part of "export import"
-                    if (i > 0 && tokens[i - 1] == "export")
-                        continue;
-
-                    if (i + 1 < tokens.size())
-                    {
-                        std::string dep = tokens[i + 1];
-                        // Skip std and empty
-                        if (!dep.starts_with("std") && dep != ";" && !dep.empty())
-                        {
-                            if (dep.starts_with(':') && !primary_name.empty())
-                                dep = primary_name + dep;
-
-                            // Only add if not seen before
-                            if (seen_imports.insert(dep).second)
-                                mod.imports.push_back(dep);
-                        }
-                    }
-                }
-                else if (tokens[i] == "export" && i + 2 < tokens.size() && tokens[i + 1] == "import")
-                {
-                    std::string dep = tokens[i + 2];
-                    // Skip std and empty
-                    if (!dep.starts_with("std") && dep != ";" && !dep.empty())
-                    {
-                        if (dep.starts_with(':') && !primary_name.empty())
-                            dep = primary_name + dep;
-
-                        // Only add if not seen before
-                        if (seen_imports.insert(dep).second)
-                            mod.imports.push_back(dep);
-                    }
-                }
-            }
-
-            if (found_name)
-                modules.push_back(std::move(mod));
-            else
-                bld::log(bld::Log_type::WARNING, "Skipped file (no module decl found): " + opt.path.string());
-            return true;
-        });
-    return modules;
-}
-
-// ==============================================================================
-// 5. MAIN
-// ==============================================================================
-
 int main(int argc, char *argv[])
 {
     BLD_REBUILD_YOURSELF_ONCHANGE();
@@ -413,8 +237,11 @@ int main(int argc, char *argv[])
     if (!build_std_module(cfg))
         return 1;
 
-    // 1. Scan
-    auto modules = scan_modules(cfg);
+    std::vector<Module> modules;
+
+    for (auto m : bld::fs::scan_modules(cfg.dir_src))
+        modules.push_back(Module{m});
+
     if (modules.empty())
     {
         bld::log(bld::Log_type::ERR, "No modules found in " + cfg.dir_src.string());
@@ -423,7 +250,7 @@ int main(int argc, char *argv[])
 
     // 2. Map
     std::unordered_map<std::string, std::string> mod_map;
-    for (const auto &m : modules) mod_map[m.name] = m.pcm(cfg).string();
+    for (const auto &m : modules) mod_map[m.module.name] = m.pcm(cfg).string();
 
     // 3. Build Graph
     bld::Dep_graph graph;
@@ -434,28 +261,28 @@ int main(int argc, char *argv[])
     for (const auto &mod : modules)
     {
         // A. PCM
-        std::vector<std::string> pcm_deps = {mod.file.string()};
+        std::vector<std::string> pcm_deps = {mod.module.file.string()};
         if (fs::exists(cfg.dir_std / "std.pcm"))
             pcm_deps.push_back((cfg.dir_std / "std.pcm").string());
 
-        for (const auto &d : mod.imports)
+        for (const auto &d : mod.module.imports)
             if (mod_map.contains(d))
                 pcm_deps.push_back(mod_map[d]);
             else
-                bld::log(bld::Log_type::WARNING, "Module '" + mod.name + "' imports '" + d + "' (not found)");
+                bld::log(bld::Log_type::WARNING, "Module '" + mod.module.name + "' imports '" + d + "' (not found)");
 
         std::vector<std::string> cmd_pcm = {cfg.compiler};
         cmd_pcm.insert(cmd_pcm.end(), cfg.flags_common.begin(), cfg.flags_common.end());
         cmd_pcm.push_back("-stdlib=libc++");
         cmd_pcm.push_back("--precompile");
-        cmd_pcm.push_back(mod.file.string());
+        cmd_pcm.push_back(mod.module.file.string());
         cmd_pcm.push_back("-o");
         cmd_pcm.push_back(mod.pcm(cfg).string());
         cmd_pcm.insert(cmd_pcm.end(), mod_paths.begin(), mod_paths.end());
 
         bld::Command c_pcm = make_cmd(cmd_pcm);
         graph.add_dep(bld::Dep(mod.pcm(cfg).string(), pcm_deps, c_pcm));
-        json_entries.push_back({cfg.dir_src.string(), c_pcm.get_command_string(), mod.file.string()});
+        json_entries.push_back({cfg.dir_src.string(), c_pcm.get_command_string(), mod.module.file.string()});
 
         // B. OBJ
         std::vector<std::string> obj_deps = {mod.pcm(cfg).string()};

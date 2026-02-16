@@ -9,13 +9,14 @@ import std;
 import :context;
 import :handle;
 import :promise;
-import :futures;
+import :futures; // Contains rio::fut::Call_poll
 
 namespace rio::fut {
 
 export template <typename T>
 concept Handle_like_c = requires(T h) { h.fd.native_handle(); };
 
+// Named poller for basic IO (read/write)
 export struct Async_poller
 {
     template <typename HandleType>
@@ -340,25 +341,28 @@ auto stop_read_after(rio::context &ctx, int fd, std::span<char> buf, std::chrono
     return rio::Future(Async_handle{s}, Async_poller{});
 }
 
-// API Functions
+// ==========================================
+// API Functions (Using Named Call_poll)
+// ==========================================
+
 export auto write_all(rio::context &ctx, int fd, std::span<const char> full_buf)
 {
-    return rio::fut::make(Write_all_impl{&ctx, fd, full_buf}, [](Write_all_impl &s) { return s.poll(); });
+    return rio::fut::make(Write_all_impl{&ctx, fd, full_buf}, rio::fut::Call_poll{});
 }
 
 export auto read_till_full(rio::context &ctx, int fd, std::span<char> full_buf)
 {
-    return rio::fut::make(Read_till_full_impl{&ctx, fd, full_buf}, [](Read_till_full_impl &s) { return s.poll(); });
+    return rio::fut::make(Read_till_full_impl{&ctx, fd, full_buf}, rio::fut::Call_poll{});
 }
 
 export auto read_till_eof(rio::context &ctx, int fd)
 {
-    return rio::fut::make(Read_till_eof_impl{&ctx, fd, {}}, [](Read_till_eof_impl &s) { return s.poll(); });
+    return rio::fut::make(Read_till_eof_impl{&ctx, fd, {}}, rio::fut::Call_poll{});
 }
 
 export auto read_till(rio::context &ctx, int fd, char delim)
 {
-    return rio::fut::make(Read_till_impl{&ctx, fd, delim, {}, {}}, [](Read_till_impl &s) { return s.poll(); });
+    return rio::fut::make(Read_till_impl{&ctx, fd, delim, {}, {}}, rio::fut::Call_poll{});
 }
 
 export auto read_line(rio::context &ctx, int fd) { return read_till(ctx, fd, '\n'); }
@@ -368,12 +372,12 @@ auto stop_read_after(rio::context &ctx, Handle_like_c auto &h, std::span<char> b
     return stop_read_after(ctx, h.fd.native_handle(), buf, t);
 }
 
-export auto read(rio::context &ctx, Handle_like_c auto &h, std::span<char> buf)            { return read(ctx, h.fd.native_handle(), buf); }
-export auto write(rio::context &ctx, Handle_like_c auto &h, std::span<const char> buf)     { return write(ctx, h.fd.native_handle(), buf); }
-export auto write_all(rio::context &ctx, Handle_like_c auto &h, std::span<const char> b)   { return write_all(ctx, h.fd.native_handle(), b); }
-export auto read_till_full(rio::context &ctx, Handle_like_c auto &h, std::span<char> b)    { return read_till_full(ctx, h.fd.native_handle(), b); }
-export auto read_till_eof(rio::context &ctx, Handle_like_c auto &h)                        { return read_till_eof(ctx, h.fd.native_handle()); }
-export auto read_till(rio::context &ctx, Handle_like_c auto &h, char d)                    { return read_till(ctx, h.fd.native_handle(), d); }
-export auto read_line(rio::context &ctx, Handle_like_c auto &h)                            { return read_line(ctx, h.fd.native_handle()); }
+export auto read(rio::context &ctx, Handle_like_c auto &h, std::span<char> buf)             { return read(ctx, h.fd.native_handle(), buf); }
+export auto write(rio::context &ctx, Handle_like_c auto &h, std::span<const char> buf)      { return write(ctx, h.fd.native_handle(), buf); }
+export auto write_all(rio::context &ctx, Handle_like_c auto &h, std::span<const char> b)    { return write_all(ctx, h.fd.native_handle(), b); }
+export auto read_till_full(rio::context &ctx, Handle_like_c auto &h, std::span<char> b)     { return read_till_full(ctx, h.fd.native_handle(), b); }
+export auto read_till_eof(rio::context &ctx, Handle_like_c auto &h)                         { return read_till_eof(ctx, h.fd.native_handle()); }
+export auto read_till(rio::context &ctx, Handle_like_c auto &h, char d)                     { return read_till(ctx, h.fd.native_handle(), d); }
+export auto read_line(rio::context &ctx, Handle_like_c auto &h)                             { return read_line(ctx, h.fd.native_handle()); }
 
 }  // namespace rio::fut

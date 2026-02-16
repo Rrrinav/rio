@@ -133,7 +133,7 @@ struct Accept_all_impl
     rio::context *ctx;
     rio::Tcp_socket *listener;
     Handler handler;
-    std::optional<decltype(accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket &>()))> curr_fut;
+    std::optional<decltype(accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket &>()))> curr_fut{};
 
     auto poll() -> rio::fut::res<void>
     {

@@ -8,7 +8,7 @@ import std.compat;
 import :io;
 
 #define __USED_IN_RIO_
-#define __RIO_IO_MODULE_PRESENT
+#define __RIO_IO_MODULE_PRESENT_
 
 namespace rio {
 
@@ -25,7 +25,7 @@ namespace rio {
         /// \return Number of bytes read, or std::nullopt on error/EOF signal.
         static std::optional<std::size_t> read(Stream &s, std::uint8_t *dest, std::size_t max)
         {
-        #if defined(__USED_IN_RIO_) && defined(__RIO_IO_MODULE_PRESENT)
+        #if defined(__USED_IN_RIO_) && defined(__RIO_IO_MODULE_PRESENT_)
             if constexpr (requires { rio::io::read(s, std::span<char>{}); })
             {
                 auto *char_ptr = reinterpret_cast<char *>(dest);
@@ -46,7 +46,7 @@ namespace rio {
     namespace detail {
 
         // Internal policy to handle stack vs heap buffer allocation
-        template <std::size_t N>
+        export template <std::size_t N>
         struct Storage_policy
         {
             alignas(std::max_align_t) std::byte data_[N];
@@ -55,7 +55,7 @@ namespace rio {
             std::size_t capacity() const noexcept { return N; }
         };
 
-        template <>
+        export template <>
         struct Storage_policy<0>
         {
             std::vector<std::uint8_t> data_;
