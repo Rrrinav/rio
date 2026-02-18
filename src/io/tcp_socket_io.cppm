@@ -26,7 +26,7 @@ export auto accept(const rio::Tcp_socket &listener) -> result<Tcp_accept_result>
         return std::unexpected(rio::Err::sys("accept failed"));
 
     client_addr.len = len;
-    return Tcp_accept_result{ .client = rio::Tcp_socket::attach(fd), .address = client_addr };
+    return Tcp_accept_result{.client = rio::Tcp_socket::attach(fd), .address = client_addr};
 }
 
 export auto connect(const rio::Tcp_socket &client, const rio::address &addr) -> result<void>
@@ -181,8 +181,7 @@ auto try_accept_pending(const rio::Tcp_socket &listener, size_t limit, Handler &
 }
 
 export template <typename Rep, typename Period>
-auto accept_with_timeout(const rio::Tcp_socket &listener, std::chrono::duration<Rep, Period> timeout)
-    -> result<Tcp_accept_result>
+auto accept_with_timeout(const rio::Tcp_socket &listener, std::chrono::duration<Rep, Period> timeout) -> result<Tcp_accept_result>
 {
     using namespace std::chrono;
     auto ms = duration_cast<milliseconds>(timeout).count();

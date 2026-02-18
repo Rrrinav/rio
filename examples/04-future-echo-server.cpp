@@ -64,6 +64,8 @@ auto make_echo_client(ClientContext ctx)
                         if (r.error().code == std::errc::operation_would_block)
                             return res<ClientContext>::pending();
                         return res<ClientContext>::error(r.error().code);
+AccessModifierOffset: -4
+IndentAccessModifiers: false
                     }
                     return res<ClientContext>::ready(std::move(c));
                 });

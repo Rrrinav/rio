@@ -39,8 +39,7 @@ struct Peek_op_impl
     Reader *reader;
 
     using Read_fut = decltype(async_stream_traits<typename Reader::stream_type>::read(
-        std::declval<rio::context &>(), std::declval<typename Reader::stream_type &>(), std::span<char>{}
-    ));
+        std::declval<rio::context &>(), std::declval<typename Reader::stream_type &>(), std::span<char>{}));
 
     std::optional<Read_fut> pending_read{};
 
@@ -50,7 +49,7 @@ struct Peek_op_impl
             // 1. Check if we have data
             if (reader->cursor_ < reader->valid_bytes_)
                 return rio::fut::res<typename Reader::view_type>::ready(
-                    { reader->buffer_.start() + reader->cursor_, reader->valid_bytes_ - reader->cursor_ });
+                    {reader->buffer_.start() + reader->cursor_, reader->valid_bytes_ - reader->cursor_});
 
             // 2. Buffer empty. Need to refill.
             if (!pending_read) {
@@ -59,9 +58,11 @@ struct Peek_op_impl
                 reader->valid_bytes_ = 0;
 
                 // Start Async Read
-                pending_read.emplace(async_stream_traits<typename Reader::stream_type>::read(reader->ctx_,
-                    reader->stream_,
-                    std::span<char>(reinterpret_cast<char *>(reader->buffer_.start()), reader->buffer_.capacity())));
+                pending_read.emplace(
+                    async_stream_traits<typename Reader::stream_type>::read(
+                        reader->ctx_,
+                        reader->stream_,
+                        std::span<char>(reinterpret_cast<char *>(reader->buffer_.start()), reader->buffer_.capacity())));
             }
 
             // 3. Poll underlying IO
@@ -96,7 +97,7 @@ struct Read_till_op_impl
     std::string result{};
     Peek_op_impl<Reader> peek_state;
 
-    Read_till_op_impl(Reader *r, char d) : reader(r), delimiter(d), peek_state{ r }
+    Read_till_op_impl(Reader *r, char d) : reader(r), delimiter(d), peek_state{r}
     {}
 
     auto poll() -> result_type
@@ -153,7 +154,7 @@ struct Load_op
     std::size_t bytes_copied = 0;
     std::array<std::byte, sizeof(T)> temp_storage;
 
-    Load_op(Reader *r) : reader(r), peek_state{ r }
+    Load_op(Reader *r) : reader(r), peek_state{r}
     {}
 
     auto poll() -> rio::fut::res<T>
@@ -206,9 +207,9 @@ public:
     rio::context &ctx_;
     Stream &stream_;
     rio::buff::detail::Storage_policy<BufferSize> buffer_;
-    size_type cursor_{ 0 };
-    size_type valid_bytes_{ 0 };
-    bool eof_reached_{ false };
+    size_type cursor_{0};
+    size_type valid_bytes_{0};
+    bool eof_reached_{false};
 
 public:
     explicit Async_buffered_reader(rio::context &ctx, Stream &stream, size_type explicit_size = 4096)
@@ -219,7 +220,7 @@ public:
     /// (Async because it might need to refill from disk/net)
     auto peek()
     {
-        return rio::Future(detail::Peek_op_impl<Async_buffered_reader>{ this }, rio::fut::Call_poll{});
+        return rio::Future(detail::Peek_op_impl<Async_buffered_reader>{this}, rio::fut::Call_poll{});
     }
 
     /// \brief Advance cursor manually (Sync operation).

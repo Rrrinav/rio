@@ -60,7 +60,7 @@ int main()
     while (true) {
         server.poll();
 
-        for (std::size_t i = clients.size(); i-- > 0;) {
+        for (std::size_t i = clients.size(); i-- > 0;) {AlignAfterOpenBracket: AlwaysBreak
             if (clients[i].poll().state == rio::fut::status::error) {
                 if (i != clients.size() - 1)
                     clients[i] = std::move(clients.back());

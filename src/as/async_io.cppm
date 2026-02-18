@@ -37,7 +37,7 @@ struct uring_request
         auto *self = reinterpret_cast<uring_request *>(ptr);
 
         if (res < 0)
-            self->callback(self->context, std::unexpected(rio::Err{ -res, "IO operation failed" }), self->user_data);
+            self->callback(self->context, std::unexpected(rio::Err{-res, "IO operation failed"}), self->user_data);
         else
             self->callback(self->context, static_cast<std::size_t>(res), self->user_data);
 
@@ -63,13 +63,13 @@ struct uring_accept_request
         auto *self = reinterpret_cast<uring_accept_request *>(ptr);
 
         if (res < 0) {
-            self->callback(self->context, std::unexpected(rio::Err{ -res, "Accept failed" }), self->user_data);
+            self->callback(self->context, std::unexpected(rio::Err{-res, "Accept failed"}), self->user_data);
         } else {
             auto client_sock = rio::Tcp_socket::attach(res);
             self->client_addr.len = self->addr_len;
 
             // Construct our dedicated result struct
-            accept_result result{ .client = std::move(client_sock), .address = std::move(self->client_addr) };
+            accept_result result{.client = std::move(client_sock), .address = std::move(self->client_addr)};
 
             self->callback(self->context, std::move(result), self->user_data);
         }
@@ -97,13 +97,14 @@ void read(rio::context &context, rio::Tcp_socket &sock, std::span<char> buffer, 
 
     using request_type = uring_request<std::decay_t<Fn>, T>;
 
-    auto *req = new request_type{ .header = { .call = &request_type::on_complete },
+    auto *req = new request_type{
+        .header = {.call = &request_type::on_complete},
         .type = Req_type::Read,
         .handle = sock.fd.native_handle(),
-        .io_v = iovec{ .iov_base = buffer.data(), .iov_len = buffer.size() },
+        .io_v = iovec{.iov_base = buffer.data(), .iov_len = buffer.size()},
         .user_data = user,
         .callback = std::forward<Fn>(on_read),
-        .context = context };
+        .context = context};
 
     io_uring_prep_readv(sqe, req->handle, &req->io_v, 1, 0);
 
@@ -121,13 +122,14 @@ void write(rio::context &context, rio::Tcp_socket &sock, std::span<const char> b
 
     using request_type = uring_request<std::decay_t<Fn>, T>;
 
-    auto *req = new request_type{ .header = { .call = &request_type::on_complete },
+    auto *req = new request_type{
+        .header = {.call = &request_type::on_complete},
         .type = Req_type::Write,
         .handle = sock.fd.native_handle(),
-        .io_v = iovec{ .iov_base = const_cast<char *>(buffer.data()), .iov_len = buffer.size() },
+        .io_v = iovec{.iov_base = const_cast<char *>(buffer.data()), .iov_len = buffer.size()},
         .user_data = user,
         .callback = std::forward<Fn>(on_write),
-        .context = context };
+        .context = context};
 
     io_uring_prep_writev(sqe, req->handle, &req->io_v, 1, 0);
 
@@ -145,19 +147,16 @@ void accept(rio::context &context, rio::Tcp_socket &listener, Fn &&on_accept, T 
 
     using request_type = uring_accept_request<std::decay_t<Fn>, T>;
 
-    auto *req = new request_type{ .header = { .call = &request_type::on_complete },
+    auto *req = new request_type{
+        .header = {.call = &request_type::on_complete},
         .context = context,
         .user_data = user,
         .callback = std::forward<Fn>(on_accept),
         .listener_fd = listener.fd.native_handle(),
         .client_addr = {},
-        .addr_len = sizeof(sockaddr_storage) };
+        .addr_len = sizeof(sockaddr_storage)};
 
-    io_uring_prep_accept(sqe,
-        req->listener_fd,
-        reinterpret_cast<sockaddr *>(&req->client_addr.storage),
-        &req->addr_len,
-        0);
+    io_uring_prep_accept(sqe, req->listener_fd, reinterpret_cast<sockaddr *>(&req->client_addr.storage), &req->addr_len, 0);
 
     io_uring_sqe_set_data(sqe, static_cast<internals::uring_request_header *>(&req->header));
     context.submit();

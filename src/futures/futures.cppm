@@ -18,19 +18,19 @@ struct res
     std::error_code err = {};
     static res pending()
     {
-        return { .state = status::pending };
+        return {.state = status::pending};
     }
     static res ready(T v)
     {
-        return { .state = status::ready, .value = std::move(v) };
+        return {.state = status::ready, .value = std::move(v)};
     }
     static res error(std::error_code ec)
     {
-        return { .state = status::error, .err = ec };
+        return {.state = status::error, .err = ec};
     }
     static res error(std::errc ec)
     {
-        return { .state = status::error, .err = std::make_error_code(ec) };
+        return {.state = status::error, .err = std::make_error_code(ec)};
     }
 };
 
@@ -42,19 +42,19 @@ struct res<void>
     std::error_code err = {};
     static res pending()
     {
-        return { .state = status::pending };
+        return {.state = status::pending};
     }
     static res ready()
     {
-        return { .state = status::ready };
+        return {.state = status::ready};
     }
     static res error(std::error_code ec)
     {
-        return { .state = status::error, .err = ec };
+        return {.state = status::error, .err = ec};
     }
     static res error(std::errc ec)
     {
-        return { .state = status::error, .err = std::make_error_code(ec) };
+        return {.state = status::error, .err = std::make_error_code(ec)};
     }
 };
 } // namespace fut
@@ -127,11 +127,9 @@ struct Future
     Future(State s, Poll_fn f) : data(std::move(s)), fn(std::move(f))
     {}
 
-    Future(Future &&) noexcept(
-        std::is_nothrow_move_constructible_v<State> && std::is_nothrow_move_constructible_v<Poll_fn>) = default;
+    Future(Future &&) noexcept(std::is_nothrow_move_constructible_v<State> && std::is_nothrow_move_constructible_v<Poll_fn>) = default;
 
-    Future &operator=(Future &&other) noexcept(
-        std::is_nothrow_move_constructible_v<State> && std::is_nothrow_move_constructible_v<Poll_fn>)
+    Future &operator=(Future &&other) noexcept(std::is_nothrow_move_constructible_v<State> && std::is_nothrow_move_constructible_v<Poll_fn>)
     {
         if (this != &other) {
             data = std::move(other.data);
@@ -305,7 +303,8 @@ struct Or_else_impl
     using value_type = typename Fut::value_type;
     using next_future_type = std::invoke_result_t<Fn, std::error_code>;
 
-    static_assert(Pollable<next_future_type> && std::is_same_v<typename next_future_type::value_type, value_type>,
+    static_assert(
+        Pollable<next_future_type> && std::is_same_v<typename next_future_type::value_type, value_type>,
         "or_else recovery function must return a Future with the same value_type");
     Fut first_fut;
     Fn fn;
@@ -621,8 +620,8 @@ struct For_all
 
     auto poll() -> rio::fut::res<std::vector<Val>>
     {
-        auto active_tasks = std::views::zip(states, results) |
-                            std::views::filter([](const auto &pair) { return !std::get<1>(pair).has_value(); });
+        auto active_tasks = std::views::zip(states, results)
+            | std::views::filter([](const auto &pair) { return !std::get<1>(pair).has_value(); });
 
         bool pending = false;
 
@@ -667,7 +666,7 @@ auto for_all(Container &&c, Poll_fn &&f)
 {
     using For_all_type = For_all<std::decay_t<Container>, std::decay_t<Poll_fn>>;
 
-    return rio::Future{ For_all_type{ std::move(c), std::move(f) }, Call_poll{} };
+    return rio::Future{For_all_type{std::move(c), std::move(f)}, Call_poll{}};
 }
 
 export template <typename... Futs>
@@ -706,9 +705,7 @@ struct Join_impl
             }
         };
 
-        std::apply(
-            [&](auto &...f_args) { std::apply([&](auto &...r_args) { (process(f_args, r_args), ...); }, results); },
-            futures);
+        std::apply([&](auto &...f_args) { std::apply([&](auto &...r_args) { (process(f_args, r_args), ...); }, results); }, futures);
 
         if (error)
             return rio::fut::res<value_type>::error(ec);
@@ -733,7 +730,7 @@ export template <typename... Futs>
 auto join(Futs &&...futs)
 {
     using JoinType = Join_impl<std::decay_t<Futs>...>;
-    return rio::Future{ JoinType{ std::forward<Futs>(futs)... }, Call_poll{} };
+    return rio::Future{JoinType{std::forward<Futs>(futs)...}, Call_poll{}};
 }
 
 export template <typename... Futs>
@@ -741,8 +738,8 @@ struct First_of_impl
 {
     std::tuple<Futs...> futures;
 
-    using value_type = std::variant<
-        std::conditional_t<std::is_void_v<typename Futs::value_type>, std::monostate, typename Futs::value_type>...>;
+    using value_type =
+        std::variant<std::conditional_t<std::is_void_v<typename Futs::value_type>, std::monostate, typename Futs::value_type>...>;
 
     First_of_impl(Futs... f) : futures(std::move(f)...)
     {}
@@ -761,8 +758,7 @@ struct First_of_impl
                 if constexpr (std::is_void_v<typename std::decay_t<decltype(fut)>::value_type>)
                     winner.emplace(rio::fut::res<value_type>::ready(value_type(std::in_place_index<I>)));
                 else
-                    winner.emplace(
-                        rio::fut::res<value_type>::ready(value_type(std::in_place_index<I>, std::move(*r.value))));
+                    winner.emplace(rio::fut::res<value_type>::ready(value_type(std::in_place_index<I>, std::move(*r.value))));
             } else if (r.state == rio::fut::status::error) {
                 winner.emplace(rio::fut::res<value_type>::error(r.err));
             }
@@ -790,7 +786,7 @@ export template <typename... Futs>
 auto first_of(Futs &&...futs)
 {
     using Race_type = First_of_impl<std::decay_t<Futs>...>;
-    return rio::Future{ Race_type{ std::forward<Futs>(futs)... }, Call_poll{} };
+    return rio::Future{Race_type{std::forward<Futs>(futs)...}, Call_poll{}};
 }
 } // namespace fut
 
@@ -799,14 +795,14 @@ namespace fut {
 export template <typename State, typename Poll_fn>
 auto make(State &&s, Poll_fn &&fn)
 {
-    return Future<std::decay_t<State>, std::decay_t<Poll_fn>>{ std::forward<State>(s), std::forward<Poll_fn>(fn) };
+    return Future<std::decay_t<State>, std::decay_t<Poll_fn>>{std::forward<State>(s), std::forward<Poll_fn>(fn)};
 }
 
 export template <typename T>
 struct Immediate_impl
 {
     using value_type = T;
-    std::optional<T> val{ std::nullopt };
+    std::optional<T> val{std::nullopt};
     std::error_code err{};
 
     res<T> poll()
@@ -825,13 +821,13 @@ struct Immediate_impl
 export template <typename T>
 auto ready(T val)
 {
-    return Future{ Immediate_impl<T>{ .val = std::move(val) }, Call_poll{} };
+    return Future{Immediate_impl<T>{.val = std::move(val)}, Call_poll{}};
 }
 
 export template <typename T>
 auto error(std::error_code ec)
 {
-    return Future{ Immediate_impl<T>{ .err = ec }, Call_poll{} };
+    return Future{Immediate_impl<T>{.err = ec}, Call_poll{}};
 }
 
 export template <typename T>
@@ -862,21 +858,21 @@ struct Immediate_impl<void>
 
 export inline auto ready()
 {
-    return Future{ Immediate_impl<void>{ .is_ready = true }, Call_poll{} };
+    return Future{Immediate_impl<void>{.is_ready = true}, Call_poll{}};
 }
 
 export template <typename State, typename BodyFn>
 auto loop(State &&s, BodyFn &&fn)
 {
     using L = Loop_impl<std::decay_t<State>, std::decay_t<BodyFn>>;
-    return make(L{ std::forward<State>(s), std::forward<BodyFn>(fn) }, Call_poll{});
+    return make(L{std::forward<State>(s), std::forward<BodyFn>(fn)}, Call_poll{});
 }
 
 export template <typename Fut1, typename Fut2>
 auto both(Fut1 &&f1, Fut2 &&f2)
 {
     using Both_type = Both_impl<std::decay_t<Fut1>, std::decay_t<Fut2>>;
-    return rio::Future{ Both_type{ std::move(f1), std::move(f2) }, Call_poll{} };
+    return rio::Future{Both_type{std::move(f1), std::move(f2)}, Call_poll{}};
 }
 } // namespace fut
 
@@ -885,7 +881,7 @@ template <typename Fn>
 auto Future<S, P>::then(Fn &&fn) &&
 {
     using T = fut::Then_impl<Future, std::decay_t<Fn>>;
-    return fut::make(T{ std::move(*this), std::forward<Fn>(fn) }, fut::Call_poll{});
+    return fut::make(T{std::move(*this), std::forward<Fn>(fn)}, fut::Call_poll{});
 }
 
 template <typename S, typename P>
@@ -893,7 +889,7 @@ template <typename Fn>
 auto Future<S, P>::map(Fn &&fn) &&
 {
     using M = fut::Map_impl<Future, std::decay_t<Fn>>;
-    return fut::make(M{ std::move(*this), std::forward<Fn>(fn) }, fut::Call_poll{});
+    return fut::make(M{std::move(*this), std::forward<Fn>(fn)}, fut::Call_poll{});
 }
 
 template <typename S, typename P>
@@ -901,7 +897,7 @@ template <typename Fn>
 auto Future<S, P>::or_else(Fn &&fn) &&
 {
     using O = fut::Or_else_impl<Future, std::decay_t<Fn>>;
-    return fut::make(O{ std::move(*this), std::forward<Fn>(fn) }, fut::Call_poll{});
+    return fut::make(O{std::move(*this), std::forward<Fn>(fn)}, fut::Call_poll{});
 }
 
 template <typename S, typename P>
@@ -909,7 +905,7 @@ template <typename Rep, typename Period>
 auto Future<S, P>::timeout(std::chrono::duration<Rep, Period> d) &&
 {
     using T = fut::Timeout_impl<Future>;
-    return fut::make(T{ std::move(*this), std::chrono::steady_clock::now() + d }, fut::Call_poll{});
+    return fut::make(T{std::move(*this), std::chrono::steady_clock::now() + d}, fut::Call_poll{});
 }
 
 template <typename S, typename P>
@@ -918,7 +914,7 @@ auto Future<S, P>::timeout_with(std::chrono::duration<Rep, Period> d, Callback c
 {
     using RecFut = std::invoke_result_t<Callback &, S &&>;
     using T = fut::Timeout_with_impl<Future, std::decay_t<Callback>, RecFut>;
-    return fut::make(T{ std::move(*this), std::chrono::steady_clock::now() + d, std::move(cb) }, fut::Call_poll{});
+    return fut::make(T{std::move(*this), std::chrono::steady_clock::now() + d, std::move(cb)}, fut::Call_poll{});
 }
 
 } // namespace rio

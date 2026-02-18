@@ -109,7 +109,7 @@ export auto read_till_eof(int fd) -> result<std::string>
     char buf[4096];
 
     while (true) {
-        auto res = read(fd, std::span{ buf });
+        auto res = read(fd, std::span{buf});
         if (!res)
             return std::unexpected(res.error());
 
@@ -136,7 +136,7 @@ export auto read_till(int fd, char delim) -> result<std::string>
 
     while (true) {
         // Very inefficient (1 byte syscalls), but safe for blocking mixed streams.
-        auto res = read(fd, std::span{ &c, 1 });
+        auto res = read(fd, std::span{&c, 1});
         if (!res)
             return std::unexpected(res.error());
 

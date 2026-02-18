@@ -43,8 +43,7 @@ auto try_kill(rio::handle &h, std::source_location loc = std::source_location::c
     h.fd = -1;
 
     if (::close(fd) == -1)
-        return std::unexpected(
-            Err{ errno, std::format("{}:{}: Couldn't close handle (fd = {}).", loc.file_name(), loc.line(), h.fd) });
+        return std::unexpected(Err{errno, std::format("{}:{}: Couldn't close handle (fd = {}).", loc.file_name(), loc.line(), h.fd)});
     return {};
 }
 } // namespace rio

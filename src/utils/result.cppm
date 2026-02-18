@@ -16,8 +16,7 @@ export struct Err
     Err(std::error_code ec, std::string msg = "") : code(ec), context(std::move(msg))
     {}
 
-    Err(int errno_val, std::string msg = "")
-        : code(std::make_error_code(static_cast<std::errc>(errno_val))), context(std::move(msg))
+    Err(int errno_val, std::string msg = "") : code(std::make_error_code(static_cast<std::errc>(errno_val))), context(std::move(msg))
     {}
 
     Err(std::errc err_c, std::string msg = "") : code(std::make_error_code(err_c)), context(std::move(msg))

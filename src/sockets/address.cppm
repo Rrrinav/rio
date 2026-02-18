@@ -40,7 +40,7 @@ export struct address
         std::string ip_str = (given_ip == "localhost") ? "127.0.0.1" : given_ip;
 
         if (::inet_pton(AF_INET, ip_str.c_str(), &addr.storage.v4.sin_addr) != 1) [[unlikely]]
-            return std::unexpected(Err{ EINVAL, std::format("Invalid IPv4 address: '{}'", ip) });
+            return std::unexpected(Err{EINVAL, std::format("Invalid IPv4 address: '{}'", ip)});
 
         return addr;
     }
@@ -82,7 +82,7 @@ export struct address
         std::string ip_str = (given_ip == "localhost") ? "::1" : given_ip;
 
         if (::inet_pton(AF_INET6, ip_str.c_str(), &addr.storage.v6.sin6_addr) != 1) [[unlikely]]
-            return std::unexpected(Err{ EINVAL, std::format("Invalid IPv6 address: '{}'", ip) });
+            return std::unexpected(Err{EINVAL, std::format("Invalid IPv6 address: '{}'", ip)});
 
         return addr;
     }
@@ -139,7 +139,7 @@ export struct address
             return addr;
         }
 
-        return std::unexpected(Err{ EINVAL, std::format("Invalid IP address: '{}'", ip) });
+        return std::unexpected(Err{EINVAL, std::format("Invalid IP address: '{}'", ip)});
     }
 
     // --- Query Methods ---

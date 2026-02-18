@@ -69,7 +69,7 @@ auto file::open(const char *path, f_mode m) -> result<file>
 
 auto file::attach(int raw_fd) -> file
 {
-    return file{ rio::handle(raw_fd) };
+    return file{rio::handle(raw_fd)};
 }
 
 file::operator bool() const

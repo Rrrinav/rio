@@ -85,7 +85,7 @@ export struct Tcp_socket
     auto shutdown(shut how = shut::write) -> result<void>
     {
         if (::shutdown(fd.native_handle(), static_cast<int>(how)) == -1)
-            return std::unexpected(Err{ errno, "Socket shutdown failed" });
+            return std::unexpected(Err{errno, "Socket shutdown failed"});
         return {};
     }
 
@@ -94,7 +94,7 @@ export struct Tcp_socket
         rio::address addr;
         addr.len = sizeof(addr.storage);
         if (::getsockname(fd.native_handle(), &addr.storage.general, &addr.len) == -1)
-            return std::unexpected(Err{ errno, "getsockname failed" });
+            return std::unexpected(Err{errno, "getsockname failed"});
         return addr;
     }
 
@@ -103,7 +103,7 @@ export struct Tcp_socket
         rio::address addr;
         addr.len = sizeof(addr.storage);
         if (::getpeername(fd.native_handle(), &addr.storage.general, &addr.len) == -1)
-            return std::unexpected(Err{ errno, "getpeername failed" });
+            return std::unexpected(Err{errno, "getpeername failed"});
         return addr;
     }
 
@@ -111,7 +111,7 @@ export struct Tcp_socket
     auto set_option(int level, int optname, T value) -> result<void>
     {
         if (::setsockopt(fd.native_handle(), level, optname, &value, sizeof(value)) == -1)
-            return std::unexpected(Err{ errno, "setsockopt failed" });
+            return std::unexpected(Err{errno, "setsockopt failed"});
         return {};
     }
 
@@ -136,7 +136,7 @@ export struct Tcp_socket
     {
         int flags = ::fcntl(fd.native_handle(), F_GETFL, 0);
         if (flags == -1)
-            return std::unexpected(Err{ errno, "fcntl(F_GETFL) failed" });
+            return std::unexpected(Err{errno, "fcntl(F_GETFL) failed"});
 
         if (blocking)
             flags &= ~O_NONBLOCK;
@@ -144,7 +144,7 @@ export struct Tcp_socket
             flags |= O_NONBLOCK;
 
         if (::fcntl(fd.native_handle(), F_SETFL, flags) == -1)
-            return std::unexpected(Err{ errno, "fcntl(F_SETFL) failed" });
+            return std::unexpected(Err{errno, "fcntl(F_SETFL) failed"});
         return {};
     }
 
@@ -162,14 +162,14 @@ export struct Tcp_socket
     {
         socklen_t len = sizeof(T);
         if (::getsockopt(fd.native_handle(), level, optname, &value, &len) == -1)
-            return std::unexpected(Err{ errno, "getsockopt failed" });
+            return std::unexpected(Err{errno, "getsockopt failed"});
         return {};
     }
 };
 
 auto Tcp_socket::attach(int raw_fd) -> Tcp_socket
 {
-    return Tcp_socket{ rio::handle(raw_fd) };
+    return Tcp_socket{rio::handle(raw_fd)};
 }
 Tcp_socket::operator bool() const
 {
@@ -179,24 +179,24 @@ Tcp_socket::operator bool() const
 export auto bind(Tcp_socket &s, const address &addr) -> result<void>
 {
     if (::bind(s.fd, &addr.storage.general, addr.len) == -1) [[unlikely]]
-        return std::unexpected(Err{ errno, "Failed to bind socket" });
+        return std::unexpected(Err{errno, "Failed to bind socket"});
     return {};
 }
 
 export auto listen(Tcp_socket &s, int backlog = 128) -> result<void>
 {
     if (::listen(s.fd, backlog) == -1) [[unlikely]]
-        return std::unexpected(Err{ errno, "Failed to listen on socket" });
+        return std::unexpected(Err{errno, "Failed to listen on socket"});
     return {};
 }
 
 auto Tcp_socket::open(s_opt options) -> result<Tcp_socket>
 {
     if (has(options, s_opt::v4) && has(options, s_opt::v6))
-        return std::unexpected(Err{ EINVAL, "Cannot specify both IPv4 and IPv6" });
+        return std::unexpected(Err{EINVAL, "Cannot specify both IPv4 and IPv6"});
 
     if (has(options, s_opt::dualstack) && !has(options, s_opt::v6))
-        return std::unexpected(Err{ EINVAL, "Dualstack requires IPv6" });
+        return std::unexpected(Err{EINVAL, "Dualstack requires IPv6"});
 
     const int domain = (has(options, s_opt::v6) || has(options, s_opt::dualstack)) ? AF_INET6 : AF_INET;
 
@@ -208,7 +208,7 @@ auto Tcp_socket::open(s_opt options) -> result<Tcp_socket>
 
     const int s = ::socket(domain, type, 0);
     if (s == -1)
-        return std::unexpected(Err{ errno, "Failed to create TCP socket" });
+        return std::unexpected(Err{errno, "Failed to create TCP socket"});
 
     auto set_sockopt = [s](int level, int optname, const int &value, const char *opt_name) -> result<void> {
         if (::setsockopt(s, level, optname, &value, sizeof(value)) == -1) {
@@ -261,9 +261,9 @@ auto Tcp_socket::open(const char *ip, uint16_t port, s_opt options) -> result<st
         return std::unexpected(addr.error());
 
     if (has(options, s_opt::v6) && addr->family() == AF_INET)
-        return std::unexpected(Err{ EINVAL, "IPv6 socket cannot bind IPv4 address" });
+        return std::unexpected(Err{EINVAL, "IPv6 socket cannot bind IPv4 address"});
     if (has(options, s_opt::v4) && addr->family() == AF_INET6)
-        return std::unexpected(Err{ EINVAL, "IPv4 socket cannot bind IPv6 address" });
+        return std::unexpected(Err{EINVAL, "IPv4 socket cannot bind IPv6 address"});
 
     auto o_res = open(*addr, options);
     if (!o_res) [[unlikely]]
@@ -285,8 +285,7 @@ auto Tcp_socket::open_and_listen(const rio::address &address, s_opt options, int
     return o_res;
 }
 
-auto Tcp_socket::open_and_listen(const char *ip, uint16_t port, s_opt options, int backlog)
-    -> result<std::tuple<Tcp_socket, rio::address>>
+auto Tcp_socket::open_and_listen(const char *ip, uint16_t port, s_opt options, int backlog) -> result<std::tuple<Tcp_socket, rio::address>>
 {
     auto o_res = open(ip, port, options);
     if (!o_res) [[unlikely]]

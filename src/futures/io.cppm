@@ -86,7 +86,7 @@ struct Uring_req
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Uring_req *>(ptr);
-        rio::Promise<Async_state<ValType>> p{ .state = self->state };
+        rio::Promise<Async_state<ValType>> p{.state = self->state};
 
         if (res < 0)
             p.reject(std::error_code(-res, std::system_category()));
@@ -104,28 +104,28 @@ export auto read(rio::context &ctx, int fd, std::span<char> buf, size_t offset =
 {
     using Val_type = std::size_t;
     auto *s = new Async_state<Val_type>();
-    auto *req = new Uring_req<Val_type>{ .header = { .call = &Uring_req<Val_type>::on_complete }, .state = s };
+    auto *req = new Uring_req<Val_type>{.header = {.call = &Uring_req<Val_type>::on_complete}, .state = s};
 
     auto *sqe = ctx.sqe();
     io_uring_prep_read(sqe, fd, buf.data(), buf.size(), offset);
     io_uring_sqe_set_data(sqe, &req->header);
 
     ctx.submit();
-    return rio::Future(Async_handle{ s }, Async_poller{});
+    return rio::Future(Async_handle{s}, Async_poller{});
 }
 
 export auto write(rio::context &ctx, int fd, std::span<const char> buf, size_t offset = 0)
 {
     using Val_type = std::size_t;
     auto *s = new Async_state<Val_type>();
-    auto *req = new Uring_req<Val_type>{ .header = { .call = &Uring_req<Val_type>::on_complete }, .state = s };
+    auto *req = new Uring_req<Val_type>{.header = {.call = &Uring_req<Val_type>::on_complete}, .state = s};
 
     auto *sqe = ctx.sqe();
     io_uring_prep_write(sqe, fd, const_cast<char *>(buf.data()), buf.size(), offset);
     io_uring_sqe_set_data(sqe, &req->header);
 
     ctx.submit();
-    return rio::Future(Async_handle{ s }, Async_poller{});
+    return rio::Future(Async_handle{s}, Async_poller{});
 }
 
 struct Timer_req
@@ -137,7 +137,7 @@ struct Timer_req
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Timer_req *>(ptr);
-        rio::Promise<Async_state<void>> p{ .state = self->state };
+        rio::Promise<Async_state<void>> p{.state = self->state};
 
         if (res == -ETIME || res == 0)
             p.resolve();
@@ -171,15 +171,16 @@ auto wake_up_after(rio::context &ctx, std::chrono::duration<Rep, Period> d)
     auto nsec = duration_cast<nanoseconds>(d - sec);
 
     auto *s = new Async_state<void>();
-    auto *req = new Timer_req{ .header = { .call = &Timer_req::on_complete },
+    auto *req = new Timer_req{
+        .header = {.call = &Timer_req::on_complete},
         .state = s,
-        .ts = { .tv_sec = static_cast<long long>(sec.count()), .tv_nsec = static_cast<long long>(nsec.count()) } };
+        .ts = {.tv_sec = static_cast<long long>(sec.count()), .tv_nsec = static_cast<long long>(nsec.count())}};
 
     auto *sqe = ctx.sqe();
     io_uring_prep_timeout(sqe, &req->ts, 0, 0);
     io_uring_sqe_set_data(sqe, &req->header);
     ctx.submit();
-    return rio::Future(Async_handle{ s }, Async_poller{});
+    return rio::Future(Async_handle{s}, Async_poller{});
 }
 
 // Composite IO Operations
@@ -253,7 +254,7 @@ export struct Read_till_eof_impl
     {
         while (true) {
             if (!curr_read)
-                curr_read.emplace(read(*ctx, fd, std::span{ chunk }));
+                curr_read.emplace(read(*ctx, fd, std::span{chunk}));
 
             auto r = curr_read->poll();
             if (r.state == rio::fut::status::pending)
@@ -283,7 +284,7 @@ export struct Read_till_impl
     {
         while (true) {
             if (!curr_read)
-                curr_read.emplace(read(*ctx, fd, std::span{ &c, 1 }));
+                curr_read.emplace(read(*ctx, fd, std::span{&c, 1}));
 
             auto r = curr_read->poll();
             if (r.state == rio::fut::status::pending)
@@ -311,24 +312,24 @@ auto stop_read_after(rio::context &ctx, int fd, std::span<char> buf, std::chrono
     auto *s = new Async_state<Val_type>();
 
     auto *read_req = new Uring_req<Val_type>{
-        .header = { .call =
-                        [](rio::internals::uring_request_header *ptr, int res) {
-                            auto *self = reinterpret_cast<Uring_req<Val_type> *>(ptr);
-                            if (res == -ECANCELED) {
-                                rio::Promise<Async_state<Val_type>> p{ .state = self->state };
-                                p.reject(std::make_error_code(std::errc::timed_out));
-                                self->state->io_done = true;
-                                if (self->state->future_dropped)
-                                    delete self->state;
-                                delete self;
-                            } else {
-                                Uring_req<Val_type>::on_complete(ptr, res);
-                            }
-                        } },
-        .state = s
-    };
+        .header =
+            {.call =
+                 [](rio::internals::uring_request_header *ptr, int res) {
+                     auto *self = reinterpret_cast<Uring_req<Val_type> *>(ptr);
+                     if (res == -ECANCELED) {
+                         rio::Promise<Async_state<Val_type>> p{.state = self->state};
+                         p.reject(std::make_error_code(std::errc::timed_out));
+                         self->state->io_done = true;
+                         if (self->state->future_dropped)
+                             delete self->state;
+                         delete self;
+                     } else {
+                         Uring_req<Val_type>::on_complete(ptr, res);
+                     }
+                 }},
+        .state = s};
 
-    auto *timer_req = new Link_timeout_req{ .header = { .call = &Link_timeout_req::on_complete } };
+    auto *timer_req = new Link_timeout_req{.header = {.call = &Link_timeout_req::on_complete}};
 
     auto sec = duration_cast<seconds>(timeout);
     auto nsec = duration_cast<nanoseconds>(timeout - sec);
@@ -346,7 +347,7 @@ auto stop_read_after(rio::context &ctx, int fd, std::span<char> buf, std::chrono
     io_uring_sqe_set_data(sqe_timer, &timer_req->header);
 
     ctx.submit();
-    return rio::Future(Async_handle{ s }, Async_poller{});
+    return rio::Future(Async_handle{s}, Async_poller{});
 }
 
 // ==========================================
@@ -355,22 +356,22 @@ auto stop_read_after(rio::context &ctx, int fd, std::span<char> buf, std::chrono
 
 export auto write_all(rio::context &ctx, int fd, std::span<const char> full_buf)
 {
-    return rio::fut::make(Write_all_impl{ &ctx, fd, full_buf }, rio::fut::Call_poll{});
+    return rio::fut::make(Write_all_impl{&ctx, fd, full_buf}, rio::fut::Call_poll{});
 }
 
 export auto read_till_full(rio::context &ctx, int fd, std::span<char> full_buf)
 {
-    return rio::fut::make(Read_till_full_impl{ &ctx, fd, full_buf }, rio::fut::Call_poll{});
+    return rio::fut::make(Read_till_full_impl{&ctx, fd, full_buf}, rio::fut::Call_poll{});
 }
 
 export auto read_till_eof(rio::context &ctx, int fd)
 {
-    return rio::fut::make(Read_till_eof_impl{ &ctx, fd, {} }, rio::fut::Call_poll{});
+    return rio::fut::make(Read_till_eof_impl{&ctx, fd, {}}, rio::fut::Call_poll{});
 }
 
 export auto read_till(rio::context &ctx, int fd, char delim)
 {
-    return rio::fut::make(Read_till_impl{ &ctx, fd, delim, {}, {} }, rio::fut::Call_poll{});
+    return rio::fut::make(Read_till_impl{&ctx, fd, delim, {}, {}}, rio::fut::Call_poll{});
 }
 
 export auto read_line(rio::context &ctx, int fd)
@@ -379,8 +380,7 @@ export auto read_line(rio::context &ctx, int fd)
 }
 
 export template <typename Rep, typename Period>
-auto stop_read_after(
-    rio::context &ctx, Handle_like_c auto &h, std::span<char> buf, std::chrono::duration<Rep, Period> t)
+auto stop_read_after(rio::context &ctx, Handle_like_c auto &h, std::span<char> buf, std::chrono::duration<Rep, Period> t)
 {
     return stop_read_after(ctx, h.fd.native_handle(), buf, t);
 }

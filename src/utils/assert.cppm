@@ -11,9 +11,8 @@ void log(std::string_view msg, const std::source_location &loc)
     std::println(std::cerr, "\n{}:{}: [assert failed] {}", loc.file_name(), loc.line(), msg);
 }
 
-export inline auto that(bool condition,
-    std::string_view msg = "Check failed",
-    const std::source_location loc = std::source_location::current()) -> void
+export inline auto
+that(bool condition, std::string_view msg = "Check failed", const std::source_location loc = std::source_location::current()) -> void
 {
 #ifndef NDEBUG
     if (!condition) {
@@ -23,9 +22,8 @@ export inline auto that(bool condition,
 #endif
 }
 
-export inline auto ensure(bool condition,
-    std::string_view msg = "Check failed",
-    const std::source_location loc = std::source_location::current()) -> void
+export inline auto
+ensure(bool condition, std::string_view msg = "Check failed", const std::source_location loc = std::source_location::current()) -> void
 {
     if (!condition) {
         log(msg, loc);

@@ -54,9 +54,11 @@ public:
         void *mem = arena.data() + aligned;
         Fn *obj = ::new (mem) Fn(std::forward<F>(f));
 
-        entries.push_back(entry{ .call = +[](void *p) noexcept { (*static_cast<Fn *>(p))(); },
-            .destroy = +[](void *p) noexcept { static_cast<Fn *>(p)->~Fn(); },
-            .obj = obj });
+        entries.push_back(
+            entry{
+                .call = +[](void *p) noexcept { (*static_cast<Fn *>(p))(); },
+                .destroy = +[](void *p) noexcept { static_cast<Fn *>(p)->~Fn(); },
+                .obj = obj});
     }
 };
 
@@ -75,8 +77,7 @@ public:
     Scope_guard(const Scope_guard &) = delete;
     Scope_guard &operator=(const Scope_guard &) = delete;
 
-    Scope_guard(Scope_guard &&other) noexcept(std::is_nothrow_move_constructible_v<F>)
-        : f(std::move(other.f)), active(other.active)
+    Scope_guard(Scope_guard &&other) noexcept(std::is_nothrow_move_constructible_v<F>) : f(std::move(other.f)), active(other.active)
     {
         other.active = false;
     }

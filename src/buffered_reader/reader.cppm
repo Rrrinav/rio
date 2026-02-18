@@ -29,7 +29,7 @@ struct stream_traits
         if constexpr (requires { rio::io::read(s, std::span<char>{}); }) {
             auto *char_ptr = reinterpret_cast<char *>(dest);
             auto res = rio::io::read(s, std::span<char>(char_ptr, max));
-            return res ? std::optional{ *res } : std::nullopt;
+            return res ? std::optional{*res} : std::nullopt;
         }
 #endif
         else
@@ -246,7 +246,7 @@ export struct String_source
     /// \brief Factory to create a source from an existing string.
     static String_source from(std::string s)
     {
-        return { std::move(s), 0 };
+        return {std::move(s), 0};
     }
 };
 
@@ -284,8 +284,7 @@ export struct Memory_source
     {}
 
     /// \brief Construct from a C-string.
-    constexpr Memory_source(const char *s)
-        : data(reinterpret_cast<const std::uint8_t *>(s), std::char_traits<char>::length(s))
+    constexpr Memory_source(const char *s) : data(reinterpret_cast<const std::uint8_t *>(s), std::char_traits<char>::length(s))
     {}
 };
 
@@ -325,8 +324,8 @@ public:
 
     Stream &stream_;
     buff::detail::Storage_policy<BufferSize> buffer_;
-    size_type cursor_{ 0 };      ///< Current read position in buffer
-    size_type valid_bytes_{ 0 }; ///< Total valid bytes currently in buffer
+    size_type cursor_{0};      ///< Current read position in buffer
+    size_type valid_bytes_{0}; ///< Total valid bytes currently in buffer
 
 public:
     /// \brief Construct a reader.
@@ -346,7 +345,7 @@ public:
             if (refill() == 0)
                 return {};
         }
-        return { buffer_.start() + cursor_, valid_bytes_ - cursor_ };
+        return {buffer_.start() + cursor_, valid_bytes_ - cursor_};
     }
 
     /// \brief Advance the cursor manually.

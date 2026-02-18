@@ -131,8 +131,7 @@ export struct context
         if (!ptr)
             return;
 
-        graveyard.push_back(
-            { .ptr = static_cast<void *>(ptr), .destroy = [](void *p) { delete static_cast<T *>(p); } });
+        graveyard.push_back({.ptr = static_cast<void *>(ptr), .destroy = [](void *p) { delete static_cast<T *>(p); }});
     }
 
     void purge_graveyard()
