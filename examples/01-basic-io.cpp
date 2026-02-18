@@ -9,17 +9,18 @@ int main()
     // auto close() -> void;        just closes fd
     // auto detatch() -> int;       returns fd and sets fd to -1
     // auto native_handle() -> int; returns fd.
-    rio::handle err{STDERR_FILENO};
-    rio::handle out{STDOUT_FILENO};
+    rio::handle err{ STDERR_FILENO };
+    rio::handle out{ STDOUT_FILENO };
 
-    rio::handle in{STDIN_FILENO};
+    rio::handle in{ STDIN_FILENO };
 
     // These are convertible to int but not copyable as handles and close fd using RAII.
     // so int q = out; is possible but auto q = out; & rio::handle q = out; isnt.
     // Because this makes ownership of files difficult.
     // Also convertible to bool, returns fd < 0.
 
-    // **** Destructor has if (fd < 0) check so, it will close only if fd is valid. Tough choice but I like this more. *****
+    // **** Destructor has if (fd < 0) check so, it will close only if fd is valid. Tough choice but I like this more.
+    // *****
 
     /*
         There are three functions defined for handles in rio.
@@ -37,8 +38,7 @@ int main()
         export auto write(const rio::handle &h, std::span<const char> data) -> result<std::size_t>
     */
 
-    if (auto res = rio::io::write(out, "Hello from rio, want to say something?\nSay: "); !res)
-    {
+    if (auto res = rio::io::write(out, "Hello from rio, want to say something?\nSay: "); !res) {
         /*
             return types of most functions is result<T>, which is,
             std::expected<T, Err>
@@ -52,12 +52,11 @@ int main()
     }
 
     std::string input;
-    if (auto res = rio::io::read_till(in, '\n'); !res)
-    {
+    if (auto res = rio::io::read_till(in, '\n'); !res) {
         std::println("{}", res.error());
         return 1;
-    }
-    else input = std::move(*res);
+    } else
+        input = std::move(*res);
 
     // We dont expect stdout, in and err to fail generally.
     // I havent marked these functions [[nodiscard]] for programmer sanity.

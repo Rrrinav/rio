@@ -1,8 +1,8 @@
 module;
 
-#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <cerrno>
+#include <netinet/in.h>
 
 export module rio:socket.address;
 import :utils.result;
@@ -13,14 +13,14 @@ namespace rio {
 
 export struct address
 {
-    union storage_t
-    {
+    union storage_t {
         sockaddr general;
         sockaddr_in v4;
         sockaddr_in6 v6;
         sockaddr_storage any;
 
-        storage_t() : any{} {}
+        storage_t() : any{}
+        {}
     } storage;
 
     socklen_t len = 0;
@@ -40,7 +40,7 @@ export struct address
         std::string ip_str = (given_ip == "localhost") ? "127.0.0.1" : given_ip;
 
         if (::inet_pton(AF_INET, ip_str.c_str(), &addr.storage.v4.sin_addr) != 1) [[unlikely]]
-            return std::unexpected(Err{EINVAL, std::format("Invalid IPv4 address: '{}'", ip)});
+            return std::unexpected(Err{ EINVAL, std::format("Invalid IPv4 address: '{}'", ip) });
 
         return addr;
     }
@@ -82,7 +82,7 @@ export struct address
         std::string ip_str = (given_ip == "localhost") ? "::1" : given_ip;
 
         if (::inet_pton(AF_INET6, ip_str.c_str(), &addr.storage.v6.sin6_addr) != 1) [[unlikely]]
-            return std::unexpected(Err{EINVAL, std::format("Invalid IPv6 address: '{}'", ip)});
+            return std::unexpected(Err{ EINVAL, std::format("Invalid IPv6 address: '{}'", ip) });
 
         return addr;
     }
@@ -125,8 +125,7 @@ export struct address
         addr.storage.v4.sin_family = AF_INET;
         addr.storage.v4.sin_port = htons(port);
 
-        if (::inet_pton(AF_INET, ip, &addr.storage.v4.sin_addr) == 1)
-        {
+        if (::inet_pton(AF_INET, ip, &addr.storage.v4.sin_addr) == 1) {
             addr.len = sizeof(sockaddr_in);
             return addr;
         }
@@ -135,13 +134,12 @@ export struct address
         addr.storage.v6.sin6_family = AF_INET6;
         addr.storage.v6.sin6_port = htons(port);
 
-        if (::inet_pton(AF_INET6, ip, &addr.storage.v6.sin6_addr) == 1)
-        {
+        if (::inet_pton(AF_INET6, ip, &addr.storage.v6.sin6_addr) == 1) {
             addr.len = sizeof(sockaddr_in6);
             return addr;
         }
 
-        return std::unexpected(Err{EINVAL, std::format("Invalid IP address: '{}'", ip)});
+        return std::unexpected(Err{ EINVAL, std::format("Invalid IP address: '{}'", ip) });
     }
 
     // --- Query Methods ---
@@ -181,15 +179,13 @@ export struct address
     {
         char buf[INET6_ADDRSTRLEN];
 
-        if (is_ipv4())
-        {
+        if (is_ipv4()) {
             if (!::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf)))
                 return "";
             return std::format("{}:{}", buf, ntohs(storage.v4.sin_port));
         }
 
-        if (is_ipv6())
-        {
+        if (is_ipv6()) {
             if (!::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf)))
                 return "";
             return std::format("[{}]:{}", buf, ntohs(storage.v6.sin6_port));
@@ -218,7 +214,7 @@ export struct address
         return len;
     }
 };
-}  // namespace rio
+} // namespace rio
 
 template <>
 struct std::formatter<rio::address> : std::formatter<std::string>

@@ -9,8 +9,9 @@ export namespace rio {
 
 class Defer_stack
 {
-    using call_t = void(*)(void*) noexcept;
-    using dtor_t = void(*)(void*) noexcept;
+    using call_t = void (*)(void *) noexcept;
+    using dtor_t = void (*)(void *) noexcept;
+
 public:
     struct entry
     {
@@ -23,8 +24,7 @@ public:
 
     ~Defer_stack()
     {
-        for (auto it = entries.rbegin(); it != entries.rend(); ++it)
-        {
+        for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
             it->call(it->obj);
             it->destroy(it->obj);
         }
@@ -54,11 +54,9 @@ public:
         void *mem = arena.data() + aligned;
         Fn *obj = ::new (mem) Fn(std::forward<F>(f));
 
-        entries.push_back(entry{
-            .call = +[](void *p) noexcept { (*static_cast<Fn *>(p))(); },
+        entries.push_back(entry{ .call = +[](void *p) noexcept { (*static_cast<Fn *>(p))(); },
             .destroy = +[](void *p) noexcept { static_cast<Fn *>(p)->~Fn(); },
-            .obj = obj
-        });
+            .obj = obj });
     }
 };
 
@@ -71,12 +69,14 @@ class Scope_guard
 public:
     using func_type = F;
 
-    Scope_guard(F &&fn) noexcept(std::is_nothrow_move_constructible_v<F>) : f(std::forward<F>(fn)) {}
+    Scope_guard(F &&fn) noexcept(std::is_nothrow_move_constructible_v<F>) : f(std::forward<F>(fn))
+    {}
 
     Scope_guard(const Scope_guard &) = delete;
     Scope_guard &operator=(const Scope_guard &) = delete;
 
-    Scope_guard(Scope_guard &&other) noexcept(std::is_nothrow_move_constructible_v<F>) : f(std::move(other.f)), active(other.active)
+    Scope_guard(Scope_guard &&other) noexcept(std::is_nothrow_move_constructible_v<F>)
+        : f(std::move(other.f)), active(other.active)
     {
         other.active = false;
     }
@@ -87,7 +87,10 @@ public:
             f();
     }
 
-    void dismiss() noexcept { active = false; }
+    void dismiss() noexcept
+    {
+        active = false;
+    }
 };
 
 // CTAD helper
@@ -101,4 +104,4 @@ auto make_scope_guard(F &&f) noexcept(std::is_nothrow_move_constructible_v<std::
     return Scope_guard<std::decay_t<F>>(std::forward<F>(f));
 }
 
-} //namespace rio
+} // namespace rio

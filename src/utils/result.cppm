@@ -13,11 +13,15 @@ export struct Err
 
     Err() = default;
 
-    Err(std::error_code ec, std::string msg = "") : code(ec), context(std::move(msg)) {}
+    Err(std::error_code ec, std::string msg = "") : code(ec), context(std::move(msg))
+    {}
 
-    Err(int errno_val, std::string msg = "") : code(std::make_error_code(static_cast<std::errc>(errno_val))), context(std::move(msg)) {}
+    Err(int errno_val, std::string msg = "")
+        : code(std::make_error_code(static_cast<std::errc>(errno_val))), context(std::move(msg))
+    {}
 
-    Err(std::errc err_c, std::string msg = "") : code(std::make_error_code(err_c)), context(std::move(msg)) {}
+    Err(std::errc err_c, std::string msg = "") : code(std::make_error_code(err_c)), context(std::move(msg))
+    {}
 
     [[nodiscard]]
     std::string message() const
@@ -38,7 +42,7 @@ export struct Err
     }
 };
 
-export template<typename T>
+export template <typename T>
 using result = std::expected<T, Err>;
 
 } // namespace rio
@@ -46,6 +50,8 @@ using result = std::expected<T, Err>;
 export template <>
 struct std::formatter<rio::Err> : std::formatter<std::string>
 {
-    auto format(const rio::Err &err, std::format_context &ctx) const 
-    { return std::formatter<std::string>::format(err.message(), ctx); }
+    auto format(const rio::Err &err, std::format_context &ctx) const
+    {
+        return std::formatter<std::string>::format(err.message(), ctx);
+    }
 };

@@ -14,7 +14,7 @@ struct Server
     std::unordered_set<Client *> clients;
 };
 
-static void client_kill(Server& server, Client *c)
+static void client_kill(Server &server, Client *c)
 {
     server.clients.erase(c);
     rio::as::kill(IO, c);
@@ -23,12 +23,10 @@ static void client_kill(Server& server, Client *c)
 
 rio::task<void> client_loop(rio::context &IO, Client *c)
 {
-    while (true)
-    {
+    while (true) {
         auto res = co_await rio::co::read(IO, c->sock, c->buf);
 
-        if (!res)
-        {
+        if (!res) {
             std::println("Client {} disconnected", c->sock.ip());
             std::println("[ERR]: ec: {}: {}", res.error().ec, res.error());
             client_kill(c);
@@ -38,8 +36,7 @@ rio::task<void> client_loop(rio::context &IO, Client *c)
         std::size_t n = *res;
         std::size_t written = co_await rio::co::write(IO, c->sock, c->buf, n, ec);
 
-        if (ec || written == 0)
-        {
+        if (ec || written == 0) {
             std::println("Client {} write failed/disconnected", c->sock.ip());
             client_kill(c);
             co_return;
@@ -47,20 +44,18 @@ rio::task<void> client_loop(rio::context &IO, Client *c)
     }
 }
 
-rio::task<void> accept_loop(rio::context &IO, Server& server)
+rio::task<void> accept_loop(rio::context &IO, Server &server)
 {
-    while (true)
-    {
+    while (true) {
         rio::error_code ec;
         rio::client::sock s = co_await rio::co::accept(IO, server.listener, ec);
 
-        if (ec)
-        {
+        if (ec) {
             std::println("Accept error: {}", ec.message());
             continue;
         }
 
-        auto *c = new Client{.sock = std::move(s)};
+        auto *c = new Client{ .sock = std::move(s) };
         server.clients.insert(c);
 
         std::println("Got connection: {}", c->sock.ip());
@@ -77,8 +72,7 @@ auto main() -> int
     // rio::context IO(rio::context::type::Uring);
 
     auto res = rio::open(8000, rio::F::close_after_use | rio::F::non_blocking);
-    if (!res)
-    {
+    if (!res) {
         std::println("Error: {}", res.error());
         return 1;
     }
@@ -87,5 +81,6 @@ auto main() -> int
 
     rio::co::spawn(IO, accept_loop(IO, server));
 
-    while (true) IO.poll();
+    while (true)
+        IO.poll();
 }

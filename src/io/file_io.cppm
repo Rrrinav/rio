@@ -1,9 +1,9 @@
 module;
 
+#include <cerrno>
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <cerrno>
 
 export module rio:io.file;
 
@@ -55,12 +55,10 @@ export auto file_size(const rio::file &f) -> result<size_t>
 // Raw send_file wrapper (int, int)
 export auto send_file(int out_fd, int in_fd, size_t count, off_t *offset = nullptr) -> result<size_t>
 {
-    while (true)
-    {
+    while (true) {
         ssize_t n = ::sendfile(out_fd, in_fd, offset, count);
 
-        if (n < 0)
-        {
+        if (n < 0) {
             if (errno == EINTR)
                 continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -86,22 +84,19 @@ export auto read_all(const rio::file &f) -> result<std::string>
         return std::unexpected(rio::Err::sys("fstat failed"));
 
     std::string out;
-    try
-    {
+    try {
         out.resize(st.st_size);
-    }
-    catch (...)
-    {
-        return std::unexpected(rio::Err{ENOMEM, "Failed to allocate file buffer"});
+    } catch (...) {
+        return std::unexpected(rio::Err{ ENOMEM, "Failed to allocate file buffer" });
     }
 
-    if (auto res = rio::io::read_till_full(f.fd.native_handle(), std::span{out}); !res)
+    if (auto res = rio::io::read_till_full(f.fd.native_handle(), std::span{ out }); !res)
         return std::unexpected(res.error());
 
     return out;
 }
 
-export auto read_all(const rio::file& f, std::string& buff) -> result<void>
+export auto read_all(const rio::file &f, std::string &buff) -> result<void>
 {
     if (auto res = read_all(f); !res)
         return std::unexpected(res.error());

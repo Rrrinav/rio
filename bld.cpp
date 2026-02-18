@@ -1,13 +1,13 @@
-#include <cstdlib>
-#include <print>
-#include <vector>
-#include <string>
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <unordered_map>
+#include <print>
+#include <string>
 #include <thread>
+#include <unordered_map>
+#include <vector>
 
 #define B_LDR_IMPLEMENTATION
 #include "b_ldr.hpp"
@@ -22,11 +22,11 @@ auto &bld_cfg = bld::Config::get();
 struct Config
 {
     // Directories
-    const fs::path dir_src  = "src/";
-    const fs::path dir_bin  = "bin/";
-    const fs::path dir_pcm  = "bin/pcms/";
-    const fs::path dir_obj  = "bin/objs/";
-    const fs::path dir_std  = "bin/std/";
+    const fs::path dir_src = "src/";
+    const fs::path dir_bin = "bin/";
+    const fs::path dir_pcm = "bin/pcms/";
+    const fs::path dir_obj = "bin/objs/";
+    const fs::path dir_std = "bin/std/";
     const fs::path dir_libs = "bin/libs/";
 
     const fs::path dir_example_bin = "bin-example/";
@@ -42,13 +42,13 @@ struct Config
     const std::string archiver = "ar";
 
     // Flags - Enforce libc++ globally
-    const std::vector<std::string> flags_common = {"-std=c++23", "-Wall", "-Wextra", "-O2", "-fPIC", "-g"};
+    const std::vector<std::string> flags_common = { "-std=c++23", "-Wall", "-Wextra", "-O2", "-fPIC", "-g" };
     // Linker Flags
-    const std::vector<std::string> flags_linker = {"-stdlib=libc++", "-luring", "-lc++abi"};
+    const std::vector<std::string> flags_linker = { "-stdlib=libc++", "-luring", "-lc++abi" };
 
     std::vector<std::string> get_mod_paths() const
     {
-        return {"-fprebuilt-module-path=" + dir_pcm.string(), "-fprebuilt-module-path=" + dir_std.string()};
+        return { "-fprebuilt-module-path=" + dir_pcm.string(), "-fprebuilt-module-path=" + dir_std.string() };
     }
 };
 
@@ -61,8 +61,14 @@ struct Module
         std::replace(s.begin(), s.end(), ':', '-');
         return s;
     }
-    fs::path pcm(const Config &cfg) const { return cfg.dir_pcm / (safe_name() + ".pcm"); }
-    fs::path obj(const Config &cfg) const { return cfg.dir_obj / (safe_name() + ".o"); }
+    fs::path pcm(const Config &cfg) const
+    {
+        return cfg.dir_pcm / (safe_name() + ".pcm");
+    }
+    fs::path obj(const Config &cfg) const
+    {
+        return cfg.dir_obj / (safe_name() + ".o");
+    }
 };
 
 struct CompilationEntry
@@ -87,8 +93,7 @@ void emit_json(const std::vector<CompilationEntry> &entries)
 {
     std::ofstream out("compile_commands.json");
     out << "[\n";
-    for (size_t i = 0; i < entries.size(); ++i)
-    {
+    for (size_t i = 0; i < entries.size(); ++i) {
         out << "  {\n";
         out << "    \"directory\": \"" << fs::current_path().string() << "\",\n";
         out << "    \"command\": \"" << entries[i].command << "\",\n";
@@ -106,29 +111,30 @@ const std::string CACHE_FILE = ".bld_std_path";
 
 std::optional<fs::path> find_std_cppm()
 {
-    if (fs::exists(CACHE_FILE))
-    {
+    if (fs::exists(CACHE_FILE)) {
         std::ifstream in(CACHE_FILE);
         std::string s;
         if (std::getline(in, s) && fs::exists(s))
             return fs::path(s);
     }
-    std::vector<fs::path> roots = {"/usr/lib/llvm-19/share/libc++/v1", "/usr/lib/llvm-18/share/libc++/v1", "/usr/share/libc++/v1",
-        "/usr/local/share", "/opt/homebrew"};
-    for (const auto &r : roots)
-    {
+    std::vector<fs::path> roots = { "/usr/lib/llvm-19/share/libc++/v1",
+        "/usr/lib/llvm-18/share/libc++/v1",
+        "/usr/share/libc++/v1",
+        "/usr/local/share",
+        "/opt/homebrew" };
+    for (const auto &r : roots) {
         if (!fs::exists(r))
             continue;
         auto opts = fs::directory_options::skip_permission_denied;
         std::error_code ec;
-        for (auto it = fs::recursive_directory_iterator(r, opts, ec); it != fs::recursive_directory_iterator(); it.increment(ec))
-        {
+        for (auto it = fs::recursive_directory_iterator(r, opts, ec); it != fs::recursive_directory_iterator();
+            it.increment(ec)) {
             if (ec)
                 continue;
-            if (it->is_directory())
-            {
+            if (it->is_directory()) {
                 std::string p = it->path().string();
-                if (p.find("include") == std::string::npos && p.find("c++") == std::string::npos && p.find("v1") == std::string::npos)
+                if (p.find("include") == std::string::npos && p.find("c++") == std::string::npos &&
+                    p.find("v1") == std::string::npos)
                     it.disable_recursion_pending();
                 continue;
             }
@@ -147,49 +153,45 @@ bool build_std_module(const Config &cfg)
     bld::log(bld::Log_type::INFO, "Building Standard Module...");
     auto std_cppm_opt = find_std_cppm();
 
-    if (!std_cppm_opt)
-    {
+    if (!std_cppm_opt) {
         bld::log(bld::Log_type::WARNING, "Could not find 'std.cppm'.");
         std::cout << "Path to std.cppm: ";
         std::string input;
         std::getline(std::cin, input);
         if (input.size() >= 2 && input.front() == '"')
             input = input.substr(1, input.size() - 2);
-        if (fs::exists(input))
-        {
+        if (fs::exists(input)) {
             std_cppm_opt = input;
             std::ofstream out(CACHE_FILE);
             out << input;
-        }
-        else
+        } else
             return false;
     }
 
     fs::path std_cppm = *std_cppm_opt;
     fs::create_directories(cfg.dir_std);
 
-    std::vector<std::string> args = {cfg.compiler};
+    std::vector<std::string> args = { cfg.compiler };
     args.insert(args.end(), cfg.flags_common.begin(), cfg.flags_common.end());
     args.push_back("-stdlib=libc++");
     std::vector<std::string> cmd1 = args;
-    cmd1.insert(cmd1.end(), {"--precompile", std_cppm.string(), "-o", (cfg.dir_std / "std.pcm").string()});
+    cmd1.insert(cmd1.end(), { "--precompile", std_cppm.string(), "-o", (cfg.dir_std / "std.pcm").string() });
     if (!bld::execute(make_cmd(cmd1)).normal)
         return false;
 
     fs::path compat = std_cppm.parent_path() / "std.compat.cppm";
-    if (fs::exists(compat))
-    {
+    if (fs::exists(compat)) {
         std::vector<std::string> cmd2 = args;
         cmd2.push_back("-fprebuilt-module-path=" + cfg.dir_std.string() + "/");
-        cmd2.insert(cmd2.end(), {"--precompile", compat.string(), "-o", (cfg.dir_std / "std.compat.pcm").string()});
+        cmd2.insert(cmd2.end(), { "--precompile", compat.string(), "-o", (cfg.dir_std / "std.compat.pcm").string() });
         bld::execute(make_cmd(cmd2));
     }
     return true;
 }
 
-bool build_file(std::string input, std::string output,const Config& cfg)
+bool build_file(std::string input, std::string output, const Config &cfg)
 {
-    bld::Command cmd = make_cmd({cfg.compiler});
+    bld::Command cmd = make_cmd({ cfg.compiler });
     cmd.add_parts("-o", output, input);
     cmd.add_parts(cfg.dir_libs.string() + cfg.lib_static);
     cmd.parts.append_range(cfg.flags_common);
@@ -219,10 +221,10 @@ int build_examples(Config cfg, std::string path = "./examples/")
         return true;
     });
     bool res = failed.empty();
-    if (!res)
-    {
+    if (!res) {
         bld::log(bld::Log_type::ERR, "Failed files.");
-        for (const auto &f : failed) bld::log(bld::Log_type::ERR, "    " + f);
+        for (const auto &f : failed)
+            bld::log(bld::Log_type::ERR, "    " + f);
     }
     return res ? 0 : 1;
 }
@@ -233,29 +235,24 @@ int main(int argc, char *argv[])
     BLD_HANDLE_ARGS();
     Config cfg;
 
-    if (bld_cfg["clean"])
-    {
+    if (bld_cfg["clean"]) {
         bld::fs::remove_dir(cfg.dir_libs);
         bld::fs::remove_dir(cfg.dir_obj);
         bld::fs::remove_dir(cfg.dir_pcm);
         return 0;
     }
-    if (bld_cfg["clean-all"])
-    {
+    if (bld_cfg["clean-all"]) {
         bld::fs::remove_dir(cfg.dir_bin);
         return 0;
     }
-    if (bld_cfg["clean-example"])
-    {
+    if (bld_cfg["clean-example"]) {
         bld::fs::remove_dir(cfg.dir_example_bin);
         return 0;
     }
 
-    if (bld_cfg["run"])
-    {
+    if (bld_cfg["run"]) {
         std::string cmd = (cfg.dir_bin / cfg.exe_name).string();
-        if (!fs::exists(cmd))
-        {
+        if (!fs::exists(cmd)) {
             bld::log(bld::Log_type::ERR, "Executable not found. Build first.");
             return 1;
         }
@@ -265,10 +262,8 @@ int main(int argc, char *argv[])
     if (bld_cfg["build-examples"])
         return build_examples(cfg, "./examples/");
 
-    if (bld_cfg["compile"])
-    {
-        if (!bld_cfg["o"])
-        {
+    if (bld_cfg["compile"]) {
+        if (!bld_cfg["o"]) {
             bld::log(bld::Log_type::ERR, "You must provide output file using '-o' flag.");
             return 1;
         }
@@ -288,17 +283,17 @@ int main(int argc, char *argv[])
     std::vector<Module> modules;
 
     for (auto m : bld::fs::scan_modules(cfg.dir_src))
-        modules.push_back(Module{m});
+        modules.push_back(Module{ m });
 
-    if (modules.empty())
-    {
+    if (modules.empty()) {
         bld::log(bld::Log_type::ERR, "No modules found in " + cfg.dir_src.string());
         return 1;
     }
 
     // 2. Map
     std::unordered_map<std::string, std::string> mod_map;
-    for (const auto &m : modules) mod_map[m.module.name] = m.pcm(cfg).string();
+    for (const auto &m : modules)
+        mod_map[m.module.name] = m.pcm(cfg).string();
 
     // 3. Build Graph
     bld::Dep_graph graph;
@@ -306,10 +301,9 @@ int main(int argc, char *argv[])
     std::vector<std::string> all_objs;
     auto mod_paths = cfg.get_mod_paths();
 
-    for (const auto &mod : modules)
-    {
+    for (const auto &mod : modules) {
         // A. PCM
-        std::vector<std::string> pcm_deps = {mod.module.file.string()};
+        std::vector<std::string> pcm_deps = { mod.module.file.string() };
         if (fs::exists(cfg.dir_std / "std.pcm"))
             pcm_deps.push_back((cfg.dir_std / "std.pcm").string());
 
@@ -319,7 +313,7 @@ int main(int argc, char *argv[])
             else
                 bld::log(bld::Log_type::WARNING, "Module '" + mod.module.name + "' imports '" + d + "' (not found)");
 
-        std::vector<std::string> cmd_pcm = {cfg.compiler};
+        std::vector<std::string> cmd_pcm = { cfg.compiler };
         cmd_pcm.insert(cmd_pcm.end(), cfg.flags_common.begin(), cfg.flags_common.end());
         cmd_pcm.push_back("-stdlib=libc++");
         cmd_pcm.push_back("--precompile");
@@ -330,11 +324,11 @@ int main(int argc, char *argv[])
 
         bld::Command c_pcm = make_cmd(cmd_pcm);
         graph.add_dep(bld::Dep(mod.pcm(cfg).string(), pcm_deps, c_pcm));
-        json_entries.push_back({cfg.dir_src.string(), c_pcm.get_command_string(), mod.module.file.string()});
+        json_entries.push_back({ cfg.dir_src.string(), c_pcm.get_command_string(), mod.module.file.string() });
 
         // B. OBJ
-        std::vector<std::string> obj_deps = {mod.pcm(cfg).string()};
-        std::vector<std::string> cmd_obj = {cfg.compiler};
+        std::vector<std::string> obj_deps = { mod.pcm(cfg).string() };
+        std::vector<std::string> cmd_obj = { cfg.compiler };
         cmd_obj.insert(cmd_obj.end(), cfg.flags_common.begin(), cfg.flags_common.end());
         cmd_obj.push_back("-c");
         cmd_obj.push_back(mod.pcm(cfg).string());
@@ -349,12 +343,12 @@ int main(int argc, char *argv[])
 
     // C. Libs
     std::string static_lib = (cfg.dir_libs / cfg.lib_static).string();
-    std::vector<std::string> ar_cmd = {cfg.archiver, "rcs", static_lib};
+    std::vector<std::string> ar_cmd = { cfg.archiver, "rcs", static_lib };
     ar_cmd.insert(ar_cmd.end(), all_objs.begin(), all_objs.end());
     graph.add_dep(bld::Dep(static_lib, all_objs, make_cmd(ar_cmd)));
 
     std::string shared_lib = (cfg.dir_libs / cfg.lib_shared).string();
-    std::vector<std::string> so_cmd = {cfg.compiler, "-shared", "-o", shared_lib};
+    std::vector<std::string> so_cmd = { cfg.compiler, "-shared", "-o", shared_lib };
     so_cmd.insert(so_cmd.end(), cfg.flags_common.begin(), cfg.flags_common.end());
     so_cmd.insert(so_cmd.end(), all_objs.begin(), all_objs.end());
     so_cmd.insert(so_cmd.end(), cfg.flags_linker.begin(), cfg.flags_linker.end());
@@ -362,12 +356,11 @@ int main(int argc, char *argv[])
 
     // D. Exe
     std::string exe_path = (cfg.dir_bin / cfg.exe_name).string();
-    if (fs::exists(cfg.main_src))
-    {
-        std::vector<std::string> exe_deps = {cfg.main_src};
+    if (fs::exists(cfg.main_src)) {
+        std::vector<std::string> exe_deps = { cfg.main_src };
         exe_deps.insert(exe_deps.end(), all_objs.begin(), all_objs.end());
 
-        std::vector<std::string> link_cmd = {cfg.compiler};
+        std::vector<std::string> link_cmd = { cfg.compiler };
         link_cmd.insert(link_cmd.end(), cfg.flags_common.begin(), cfg.flags_common.end());
         link_cmd.push_back(cfg.main_src);
         link_cmd.insert(link_cmd.end(), all_objs.begin(), all_objs.end());
@@ -378,11 +371,11 @@ int main(int argc, char *argv[])
 
         bld::Command c_link = make_cmd(link_cmd);
         graph.add_dep(bld::Dep(exe_path, exe_deps, c_link));
-        json_entries.push_back({fs::current_path().string(), c_link.get_command_string(), cfg.main_src});
+        json_entries.push_back({ fs::current_path().string(), c_link.get_command_string(), cfg.main_src });
     }
 
     // --- EXECUTE ---
-    std::vector<std::string> final_targets = {static_lib, shared_lib};
+    std::vector<std::string> final_targets = { static_lib, shared_lib };
     if (fs::exists(cfg.main_src))
         final_targets.push_back(exe_path);
     graph.add_phony("all", final_targets);
@@ -393,14 +386,11 @@ int main(int argc, char *argv[])
 
     bld::log(bld::Log_type::INFO, "Building with " + std::to_string(threads) + " threads...");
 
-    if (graph.build_parallel("all", 7))
-    {
+    if (graph.build_parallel("all", 7)) {
         bld::log(bld::Log_type::INFO, "Build Successful.");
         emit_json(json_entries);
         return 0;
-    }
-    else
-    {
+    } else {
         bld::log(bld::Log_type::ERR, "Build Failed.");
         return 1;
     }

@@ -27,18 +27,14 @@ int main()
     */
     {
         rio::file F;
-        if (auto res = rio::file::open(path.c_str()); !res)
-        {
+        if (auto res = rio::file::open(path.c_str()); !res) {
             rio::io::write(err, std::format("{}\n", res.error()));
             return 1;
-        }
-        else
-        {
+        } else {
             F = std::move(res.value());
         }
 
-        if (auto res = rio::io::read_all(F, str); !res)
-        {
+        if (auto res = rio::io::read_all(F, str); !res) {
             rio::io::write(err, std::format("{}\n", res.error()));
             return 1;
         }
@@ -66,18 +62,16 @@ int main()
 
         // Create temp file
         rio::file tmp;
-        if (auto res = rio::file::open(temp_path.c_str(), rio::f_mode::write | rio::f_mode::create | rio::f_mode::truncate); !res)
-        {
+        if (auto res = rio::file::open(temp_path.c_str(),
+                rio::f_mode::write | rio::f_mode::create | rio::f_mode::truncate);
+            !res) {
             rio::io::write(err, std::format("{}\n", res.error()));
             return 1;
-        }
-        else
-        {
+        } else {
             tmp = std::move(res.value());
         }
 
-        if (auto res = rio::io::write(tmp, str); !res)
-        {
+        if (auto res = rio::io::write(tmp, str); !res) {
             rio::io::write(err, std::format("Write error: {}\n", res.error()));
             std::filesystem::remove(temp_path);
             return 1;
@@ -85,12 +79,9 @@ int main()
 
         ::fsync(tmp.fd);
 
-        try
-        {
+        try {
             std::filesystem::rename(temp_path, path);
-        }
-        catch (const std::exception& e)
-        {
+        } catch (const std::exception &e) {
             rio::io::write(err, std::format("Rename failed: {}\n", e.what()));
             std::filesystem::remove(temp_path);
             return 1;
@@ -100,8 +91,7 @@ int main()
         if (dir.empty())
             dir = ".";
 
-        if (auto res = rio::file::open(dir.c_str()); res)
-        {
+        if (auto res = rio::file::open(dir.c_str()); res) {
             ::fsync(res.value().fd);
         }
 

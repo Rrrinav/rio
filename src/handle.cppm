@@ -1,10 +1,10 @@
 module;
 
 #include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
 #include <linux/fs.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 export module rio:handle;
 
@@ -16,30 +16,39 @@ export struct handle
 
     // Constructors
     handle() = default;
-    explicit handle(int f) : fd(f) {}
+    explicit handle(int f) : fd(f)
+    {}
 
     handle(const handle &) = delete;
     handle &operator=(const handle &) = delete;
 
-    handle(handle &&other) noexcept : fd(other.fd) { other.fd = -1; }
+    handle(handle &&other) noexcept : fd(other.fd)
+    {
+        other.fd = -1;
+    }
     handle &operator=(handle &&other) noexcept;
-    ~handle() { close(); }
+    ~handle()
+    {
+        close();
+    }
 
     // Minimal methods
     auto close() -> void;
     auto detatch() -> int;
 
     explicit operator bool() const;
-    operator int() const { return fd; }
+    operator int() const
+    {
+        return fd;
+    }
     auto native_handle() const -> int;
 };
 
 // Definitions
 
-handle & handle::operator=(handle &&other) noexcept
+handle &handle::operator=(handle &&other) noexcept
 {
-    if (this != &other)
-    {
+    if (this != &other) {
         close();
         fd = other.fd;
         other.fd = -1;
@@ -49,8 +58,7 @@ handle & handle::operator=(handle &&other) noexcept
 
 void handle::close()
 {
-    if (fd != -1)
-    {
+    if (fd != -1) {
         ::close(fd);
         fd = -1;
     }
@@ -63,6 +71,12 @@ auto handle::detatch() -> int
     return res;
 }
 
-handle::operator bool() const { return fd != -1; }
-int handle::native_handle() const { return fd; }
+handle::operator bool() const
+{
+    return fd != -1;
+}
+int handle::native_handle() const
+{
+    return fd;
+}
 } // namespace rio

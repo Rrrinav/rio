@@ -28,48 +28,40 @@ auto main() -> int
     // };
     // Note: It must also have a resolve function but making a concept out of it becomes too restrictive.
     // Here, the state stores string, therfore to resolve it, we will provide it with a string.
-    auto* state = new rio::promise::State<std::string>{};
+    auto *state = new rio::promise::State<std::string>{};
 
     // Then you bind that state to promise.
     // Note: promise holds a raw pointer to the state.
     rio::Promise pr{ .state = state };
 
-    // Then you bind that state to future and return the poll result for library state, you are free to do anything else with it too,
-    // if you want, at the end of the day all you have to do is return a rio::fut::res but library `state` isn't written for such purposes.
-    rio::Future fut{
-        state,
-        [](rio::promise::State<std::string>* s) {
-            return s->poll();
-        }
-    };
-    // NOTE: **** If state was on stack, you would do `&state` for both promise and future and it would work in this case because nothing moves around. ******
+    // Then you bind that state to future and return the poll result for library state, you are free to do anything else
+    // with it too, if you want, at the end of the day all you have to do is return a rio::fut::res but library `state`
+    // isn't written for such purposes.
+    rio::Future fut{ state, [](rio::promise::State<std::string> *s) { return s->poll(); } };
+    // NOTE: **** If state was on stack, you would do `&state` for both promise and future and it would work in this
+    // case because nothing moves around. ******
     //      Library gives you full control on it.
 
     // An async function like emulation where this future reads one char per tick.
     // To make state error-ful, do `promise.reject(std::errc)`, to add value, do `promise.resolve(value)`;
     // If you did state-mangement properly, value/error will propagate to the future bound to promise/state.
-    rio::Future fut_read{
-        context{ "", pr, 0, false },
-        [](context& cont) -> rio::fut::res<void> {
-            if (cont.done)
-                return rio::fut::res<void>::ready();
+    rio::Future fut_read{ context{ "", pr, 0, false }, [](context &cont) -> rio::fut::res<void> {
+                             if (cont.done)
+                                 return rio::fut::res<void>::ready();
 
-            if (cont.index < File.size())
-            {
-                cont.data += File[cont.index++];
-                return rio::fut::res<void>::pending();
-            }
+                             if (cont.index < File.size()) {
+                                 cont.data += File[cont.index++];
+                                 return rio::fut::res<void>::pending();
+                             }
 
-            cont.promise.resolve(cont.data);
-            cont.done = true;
-            return rio::fut::res<void>::ready();
-        }
-    };
+                             cont.promise.resolve(cont.data);
+                             cont.done = true;
+                             return rio::fut::res<void>::ready();
+                         } };
 
     int tick = 0;
 
-    while (true)
-    {
+    while (true) {
         // I do different things to achieve same results so users can know all the ways.
         // Polling the future to read the data one char at a tick.
         fut_read.poll();
@@ -78,10 +70,12 @@ auto main() -> int
         auto value_res = rio::poll(fut);
 
         // Resolved it.
-        if (value_res.state == rio::fut::status::ready)
-        {
+        if (value_res.state == rio::fut::status::ready) {
             // Number of ticks = number of chars read. Noice!
-            std::println("tick: {}, read({}): {}", tick, value_res.value->size(), value_res.value.value_or("some error occured"));
+            std::println("tick: {}, read({}): {}",
+                tick,
+                value_res.value->size(),
+                value_res.value.value_or("some error occured"));
             break;
         }
 

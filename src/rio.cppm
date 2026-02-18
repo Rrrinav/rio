@@ -1,7 +1,7 @@
 module;
 
-#include <unistd.h>
 #include <cerrno>
+#include <unistd.h>
 
 export module rio;
 
@@ -27,8 +27,7 @@ export import :buff_reader_async;
 namespace rio {
 export auto kill(rio::handle &h) -> void
 {
-    if (h.fd != -1)
-    {
+    if (h.fd != -1) {
         ::close(h.fd);
         h.fd = -1;
     }
@@ -44,7 +43,8 @@ auto try_kill(rio::handle &h, std::source_location loc = std::source_location::c
     h.fd = -1;
 
     if (::close(fd) == -1)
-        return std::unexpected(Err{errno, std::format("{}:{}: Couldn't close handle (fd = {}).", loc.file_name(), loc.line(), h.fd)});
+        return std::unexpected(
+            Err{ errno, std::format("{}:{}: Couldn't close handle (fd = {}).", loc.file_name(), loc.line(), h.fd) });
     return {};
 }
-}
+} // namespace rio

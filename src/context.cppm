@@ -8,14 +8,14 @@ import std;
 
 namespace rio {
 
-    namespace internals {
+namespace internals {
 
-    export struct uring_request_header
-    {
-        void (*call)(uring_request_header* self, int res);
-    };
+export struct uring_request_header
+{
+    void (*call)(uring_request_header *self, int res);
+};
 
-    };
+}; // namespace internals
 
 export struct context
 {
@@ -52,8 +52,7 @@ export struct context
 
     context &operator=(context &&other) noexcept
     {
-        if (this != &other)
-        {
+        if (this != &other) {
             if (ring.ring_fd >= 0)
                 io_uring_queue_exit(&ring);
 
@@ -64,11 +63,10 @@ export struct context
     }
 
     [[nodiscard]]
-    auto sqe() -> io_uring_sqe*
+    auto sqe() -> io_uring_sqe *
     {
-        io_uring_sqe* sqe = io_uring_get_sqe(&ring);
-        if (!sqe) [[unlikely]]
-        {
+        io_uring_sqe *sqe = io_uring_get_sqe(&ring);
+        if (!sqe) [[unlikely]] {
             io_uring_submit(&ring);
             sqe = io_uring_get_sqe(&ring);
             if (!sqe) [[unlikely]]
@@ -107,8 +105,7 @@ export struct context
 
             auto *ptr = io_uring_cqe_get_data(cqe);
 
-            if (ptr)
-            {
+            if (ptr) {
                 auto *req = static_cast<internals::uring_request_header *>(ptr);
                 req->call(req, cqe->res);
             }
@@ -117,9 +114,9 @@ export struct context
         io_uring_cq_advance(&ring, count);
     }
 
-    auto run(bool& quit)
+    auto run(bool &quit)
     {
-        while(!quit)
+        while (!quit)
             this->poll();
     }
     void run()
@@ -134,7 +131,8 @@ export struct context
         if (!ptr)
             return;
 
-        graveyard.push_back({.ptr = static_cast<void *>(ptr), .destroy = [](void *p) { delete static_cast<T *>(p); }});
+        graveyard.push_back(
+            { .ptr = static_cast<void *>(ptr), .destroy = [](void *p) { delete static_cast<T *>(p); } });
     }
 
     void purge_graveyard()
@@ -155,9 +153,9 @@ export struct context
         auto ret = std::ranges::unique(batch, {}, &tombstone::ptr);
 
         // 4. DESTROY: Only the unique items
-        for (auto it = batch.begin(); it != ret.begin(); ++it) it->destroy(it->ptr);
+        for (auto it = batch.begin(); it != ret.begin(); ++it)
+            it->destroy(it->ptr);
     }
 };
 
 } // namespace rio
-

@@ -1,9 +1,9 @@
 module;
 
-#include <sys/socket.h>
-#include <poll.h>
-#include <fcntl.h>
 #include <cerrno>
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/socket.h>
 
 export module rio:io.tcp_socket;
 
@@ -26,7 +26,7 @@ export auto accept(const rio::Tcp_socket &listener) -> result<Tcp_accept_result>
         return std::unexpected(rio::Err::sys("accept failed"));
 
     client_addr.len = len;
-    return Tcp_accept_result { .client = rio::Tcp_socket::attach(fd), .address = client_addr };
+    return Tcp_accept_result{ .client = rio::Tcp_socket::attach(fd), .address = client_addr };
 }
 
 export auto connect(const rio::Tcp_socket &client, const rio::address &addr) -> result<void>
@@ -43,7 +43,7 @@ export auto try_accept(const rio::Tcp_socket &listener) -> result<Tcp_accept_res
     pfd.fd = listener.fd.native_handle();
     pfd.events = POLLIN;
 
-    int p = ::poll(&pfd, 1, 0);  // Timeout 0 = return immediately
+    int p = ::poll(&pfd, 1, 0); // Timeout 0 = return immediately
 
     if (p < 0)
         return std::unexpected(rio::Err::sys("poll failed"));
@@ -70,24 +70,21 @@ export auto try_connect(rio::Tcp_socket &client, const rio::address &addr) -> re
     // 3. Restore Flags (Optional: usually non-blocking is desired for 'try' flows, but we restore for safety)
     ::fcntl(fd, F_SETFL, flags);
 
-    if (res < 0)
-    {
+    if (res < 0) {
         if (errno == EINPROGRESS)
             return std::unexpected(rio::Err::app(std::errc::operation_in_progress, "Connection started"));
         return std::unexpected(rio::Err::sys("connect failed"));
     }
 
-    return {};  // Connected immediately (local)
+    return {}; // Connected immediately (local)
 }
 
 export auto try_read(const rio::Tcp_socket &sock, std::span<char> buf) -> result<size_t>
 {
-    while (true)
-    {
+    while (true) {
         ssize_t n = ::recv(sock.fd.native_handle(), buf.data(), buf.size(), MSG_DONTWAIT);
 
-        if (n < 0)
-        {
+        if (n < 0) {
             if (errno == EINTR)
                 continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -102,12 +99,10 @@ export auto try_read(const rio::Tcp_socket &sock, std::span<char> buf) -> result
 // "Try Write": Uses MSG_DONTWAIT. Safe on blocking sockets.
 export auto try_write(const rio::Tcp_socket &sock, std::span<const char> buf) -> result<size_t>
 {
-    while (true)
-    {
+    while (true) {
         ssize_t n = ::send(sock.fd.native_handle(), buf.data(), buf.size(), MSG_DONTWAIT | MSG_NOSIGNAL);
 
-        if (n < 0)
-        {
+        if (n < 0) {
             if (errno == EINTR)
                 continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -119,12 +114,11 @@ export auto try_write(const rio::Tcp_socket &sock, std::span<const char> buf) ->
     }
 }
 
-export template<typename Handler>
-requires std::invocable<Handler, rio::Tcp_socket, rio::address>
-auto accept_all(const rio::Tcp_socket& listener, Handler&& handler) -> result<void>
+export template <typename Handler>
+    requires std::invocable<Handler, rio::Tcp_socket, rio::address>
+auto accept_all(const rio::Tcp_socket &listener, Handler &&handler) -> result<void>
 {
-    while (true)
-    {
+    while (true) {
         auto res = accept(listener);
         if (!res)
             return std::unexpected(res.error());
@@ -135,11 +129,10 @@ auto accept_all(const rio::Tcp_socket& listener, Handler&& handler) -> result<vo
 }
 
 export template <typename Handler>
-requires std::invocable<Handler, rio::Tcp_socket, rio::address>
+    requires std::invocable<Handler, rio::Tcp_socket, rio::address>
 auto accept_many(const rio::Tcp_socket &listener, size_t limit, Handler &&handler) -> result<void>
 {
-    for (size_t i = 0; i < limit; ++i)
-    {
+    for (size_t i = 0; i < limit; ++i) {
         auto res = accept(listener);
         if (!res)
             return std::unexpected(res.error());
@@ -153,8 +146,7 @@ auto accept_many(const rio::Tcp_socket &listener, size_t limit, Handler &&handle
 export template <typename OutputIt>
 auto accept_into(const rio::Tcp_socket &listener, size_t limit, OutputIt d_first) -> result<void>
 {
-    for (size_t i = 0; i < limit; ++i)
-    {
+    for (size_t i = 0; i < limit; ++i) {
         auto res = accept(listener);
         if (!res)
             return std::unexpected(res.error());
@@ -165,17 +157,15 @@ auto accept_into(const rio::Tcp_socket &listener, size_t limit, OutputIt d_first
 }
 
 export template <typename Handler>
-requires std::invocable<Handler, rio::Tcp_socket, rio::address>
+    requires std::invocable<Handler, rio::Tcp_socket, rio::address>
 auto try_accept_pending(const rio::Tcp_socket &listener, size_t limit, Handler &&handler) -> result<size_t>
 {
     size_t count = 0;
-    while (count < limit)
-    {
+    while (count < limit) {
         // Use try_accept to check without blocking
         auto res = try_accept(listener);
 
-        if (!res)
-        {
+        if (!res) {
             // If it's just empty, we are done with the batch
             if (res.error().code == std::errc::operation_would_block)
                 break;
@@ -191,7 +181,8 @@ auto try_accept_pending(const rio::Tcp_socket &listener, size_t limit, Handler &
 }
 
 export template <typename Rep, typename Period>
-auto accept_with_timeout(const rio::Tcp_socket &listener, std::chrono::duration<Rep, Period> timeout) -> result<Tcp_accept_result>
+auto accept_with_timeout(const rio::Tcp_socket &listener, std::chrono::duration<Rep, Period> timeout)
+    -> result<Tcp_accept_result>
 {
     using namespace std::chrono;
     auto ms = duration_cast<milliseconds>(timeout).count();
@@ -213,4 +204,4 @@ auto accept_with_timeout(const rio::Tcp_socket &listener, std::chrono::duration<
     return accept(listener);
 }
 
-}  // namespace rio::io
+} // namespace rio::io
