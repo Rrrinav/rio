@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <print>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -184,6 +185,46 @@ bool build_std_module(const Config &cfg)
     return true;
 }
 
+bool build_file(std::string input, std::string output,const Config& cfg)
+{
+    bld::Command cmd = make_cmd({cfg.compiler});
+    cmd.add_parts("-o", output, input);
+    cmd.add_parts(cfg.dir_libs.string() + cfg.lib_static);
+    cmd.parts.append_range(cfg.flags_common);
+    cmd.parts.append_range(cfg.get_mod_paths());
+    cmd.parts.append_range(cfg.flags_linker);
+    return bld::execute(cmd);
+}
+
+int buld_examples(Config cfg, std::string path = "./examples/")
+{
+    std::string output_dir = "examples-bin";
+    bld::fs::create_dir_if_not_exists(output_dir);
+    std::vector<std::string> failed;
+    std::size_t total = 0;
+    bld::fs::walk_directory(path, [&](bld::fs::Walk_fn_opt &opt) -> bool {
+        std::println("{}", opt.path.string());
+        if (std::filesystem::is_directory(opt.path))
+            return true;
+        if (opt.path.extension() != ".cpp")
+            return true;
+        std::filesystem::path relative_path = std::filesystem::relative(opt.path, path);
+        std::string actual_file = relative_path.string();
+        auto output_path = output_dir + "/" + actual_file;
+        total++;
+        if (!build_file(opt.path.string(), output_path, cfg))
+            failed.push_back(actual_file);
+        return true;
+    });
+    bool res = failed.empty();
+    if (!res)
+    {
+        bld::log(bld::Log_type::ERR, "Failed files.");
+        for (const auto &f : failed) bld::log(bld::Log_type::ERR, "    " + f);
+    }
+    return res ? 0 : 1;
+}
+
 int main(int argc, char *argv[])
 {
     BLD_REBUILD_YOURSELF_ONCHANGE();
@@ -214,17 +255,17 @@ int main(int argc, char *argv[])
         return std::system(cmd.c_str());
     }
 
+    if (bld_cfg["build-examples"])
+        return buld_examples(cfg, "./examples/");
+
     if (bld_cfg["compile"])
     {
-        std::string input = bld_cfg["compile"];
-        std::string output = bld_cfg["o"] ? (std::string)bld_cfg["o"] : "a.out";
-        bld::Command cmd = make_cmd({cfg.compiler});
-        cmd.add_parts("-o", output, input);
-        cmd.add_parts(cfg.dir_libs.string() + cfg.lib_static);
-        cmd.parts.append_range(cfg.flags_common);
-        cmd.parts.append_range(cfg.get_mod_paths());
-        cmd.parts.append_range(cfg.flags_linker);
-        return bld::execute(cmd).normal ? 0 : 1;
+        if (!bld_cfg["o"])
+        {
+            bld::log(bld::Log_type::ERR, "You must provide output file using '-o' flag.");
+            return 1;
+        }
+        return build_file(bld_cfg["compile"], bld_cfg["o"], cfg) ? 0 : 1;
     }
 
     // --- SETUP ---

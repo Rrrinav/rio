@@ -88,6 +88,7 @@ class Async_buffered_reader;
     template <typename Reader>
     struct Read_till_op_impl
     {
+        using value_type = std::string;
         Reader *reader;
         char delimiter;
         std::string result{};
@@ -204,6 +205,7 @@ public:
     rio::buff::detail::Storage_policy<BufferSize> buffer_;
     size_type cursor_{0};
     size_type valid_bytes_{0};
+    bool eof_reached_{false};
 
 public:
     explicit Async_buffered_reader(rio::context &ctx, Stream &stream, size_type explicit_size = 4096)
@@ -218,15 +220,22 @@ public:
 
     /// \brief Advance cursor manually (Sync operation).
     void advance(size_type n) { cursor_ += n; }
+
+    /// \brief Check if EOF has been reached
+    bool at_eof() const { return eof_reached_ && cursor_ >= valid_bytes_; }
+
+    /// \brief Check if buffer is exhausted (but may not be EOF)
+    bool buffer_empty() const { return cursor_ >= valid_bytes_; }
 };
 
     namespace fut::buff {
 
+    // TODO: Make all these functions aware of wheter size of string 0 if because of EOF or it's just normal.
     export template <typename Stream, size_t N>
     auto read_till(Async_buffered_reader<Stream, N> &reader, char delimiter)
     {
         using Op = detail::Read_till_op_impl<Async_buffered_reader<Stream, N>>;
-        return rio::Future(Op(&reader, delimiter), [](Op &op) { return op.poll(); });
+        return rio::Future(Op(&reader, delimiter), rio::fut::Call_poll{});
     }
 
     export template <typename Stream, size_t N>

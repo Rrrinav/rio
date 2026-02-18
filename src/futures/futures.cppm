@@ -92,8 +92,7 @@ namespace rio {
 
         Future(Future &&) noexcept(std::is_nothrow_move_constructible_v<State> && std::is_nothrow_move_constructible_v<Poll_fn>) = default;
 
-        Future &operator=(Future &&other) noexcept(
-            std::is_nothrow_move_constructible_v<State> && std::is_nothrow_move_constructible_v<Poll_fn>)
+        Future &operator=(Future &&other) noexcept(std::is_nothrow_move_constructible_v<State> && std::is_nothrow_move_constructible_v<Poll_fn>)
         {
             if (this != &other)
             {
@@ -109,8 +108,16 @@ namespace rio {
 
         template <typename Fn>
         auto then(Fn &&fn) &&;
+
+        template <typename Fn>
+        auto map(Fn &&fn) &&;
+
+        template <typename Fn>
+        auto or_else(Fn &&fn) &&;
+
         template <typename Rep, typename Period>
         auto timeout(std::chrono::duration<Rep, Period> d) &&;
+
         template <typename Rep, typename Period, typename Callback>
         auto timeout_with(std::chrono::duration<Rep, Period> d, Callback cb) &&;
     };
@@ -184,6 +191,142 @@ namespace rio {
         friend auto tag_invoke(poll_t, Then_impl &t) { return t.poll(); }
     };
     export template <Pollable Fut, typename Fn> Then_impl(Fut, Fn) -> Then_impl<Fut, Fn>;
+
+    export template<Pollable Fut, typename Fn>
+    struct Map_impl
+    {
+        using input_type  = typename Fut::value_type;
+
+        static_assert(!std::is_void_v<input_type>, "Map cannot be used on void Futures. Use .then() instead.");
+        using value_type = std::invoke_result_t<Fn, input_type>;
+
+        Fut fut;
+        Fn fn;
+
+        Map_impl(Fut f, Fn func) : fut(std::move(f)), fn(std::move(func)) {}
+
+        Map_impl(Map_impl &&) noexcept = default;
+        Map_impl &operator=(Map_impl &&other) noexcept
+        {
+            if (this != &other)
+            {
+                fut = std::move(other.fut);
+                std::destroy_at(&fn);
+                std::construct_at(&fn, std::move(other.fn));
+            }
+            return *this;
+        }
+
+        fut::res<value_type> poll()
+        {
+            auto r = rio::poll(fut);
+
+            if (r.state == fut::status::pending)
+                return fut::res<value_type>::pending();
+
+            if (r.state == fut::status::error)
+                return fut::res<value_type>::error(r.err);
+
+            if constexpr (std::is_void_v<input_type>)
+            {
+                if constexpr (std::is_void_v<value_type>)
+                {
+                    fn();
+                    return fut::res<void>::ready();
+                }
+                else
+                {
+                    return fut::res<value_type>::ready(fn());
+                }
+            }
+            else if constexpr (std::is_void_v<value_type>)
+            {
+                fn(std::move(*r.value));
+                return fut::res<void>::ready();
+            }
+            else
+            {
+                return fut::res<value_type>::ready(fn(std::move(*r.value)));
+            }
+        }
+        friend auto tag_invoke(poll_t, Map_impl &m) { return m.poll(); }
+    };
+    export template <Pollable Fut, typename Fn> Map_impl(Fut, Fn) -> Map_impl<Fut, Fn>;
+
+    export template <Pollable Fut, typename Fn>
+    struct Or_else_impl
+    {
+        using value_type = typename Fut::value_type;
+        using next_future_type = std::invoke_result_t<Fn, std::error_code>;
+
+        static_assert(
+            Pollable<next_future_type> &&
+            std::is_same_v<typename next_future_type::value_type, value_type>,
+            "or_else recovery function must return a Future with the same value_type"
+        );
+        Fut first_fut;
+        Fn fn;
+        enum class Phase : uint8_t
+        {
+            First,
+            Recovery,
+            Done
+        } phase = Phase::First;
+        std::optional<next_future_type> recovery{};
+
+        Or_else_impl(Fut f, Fn func) : first_fut(std::move(f)), fn(std::move(func)) {}
+
+        Or_else_impl(Or_else_impl &&) noexcept = default;
+        Or_else_impl &operator=(Or_else_impl &&other) noexcept
+        {
+            if (this != &other)
+            {
+                first_fut = std::move(other.first_fut);
+                phase = other.phase;
+                recovery = std::move(other.recovery);
+                std::destroy_at(&fn);
+                std::construct_at(&fn, std::move(other.fn));
+            }
+            return *this;
+        }
+
+        fut::res<value_type> poll()
+        {
+            if (phase == Phase::Done)
+                return fut::res<value_type>::error(std::make_error_code(std::errc::operation_not_permitted));
+
+            if (phase == Phase::First)
+            {
+                auto r = rio::poll(first_fut);
+
+                if (r.state == fut::status::ready)
+                {
+                    phase = Phase::Done;
+                    if constexpr (std::is_void_v<value_type>)
+                        return fut::res<void>::ready();
+                    else
+                        return fut::res<value_type>::ready(std::move(*r.value));
+                }
+
+                if (r.state == fut::status::pending)
+                    return fut::res<value_type>::pending();
+
+                if (r.state == fut::status::error)
+                {
+                    recovery.emplace(fn(r.err));
+                    phase = Phase::Recovery;
+                }
+            }
+
+            auto r = rio::poll(*recovery);
+            if (r.state != fut::status::pending)
+                phase = Phase::Done;
+            return r;
+        }
+        friend auto tag_invoke(poll_t, Or_else_impl &o) { return o.poll(); }
+    };
+    export template <Pollable Fut, typename Fn>
+    Or_else_impl(Fut, Fn) -> Or_else_impl<Fut, Fn>;
 
     export template <typename State, typename Body_fn>
     struct Loop_impl
@@ -609,17 +752,38 @@ namespace rio {
     }
 
     export template <typename T>
+    struct Immediate_impl
+    {
+        using value_type = T;
+        std::optional<T> val{std::nullopt};
+        std::error_code err{};
+
+        res<T> poll()
+        {
+            if (err)
+                return res<T>::error(err);
+            return res<T>::ready(std::move(*val));
+        }
+
+        friend auto tag_invoke(poll_t, Immediate_impl &i) { return i.poll(); }
+    };
+
+    export template <typename T>
     auto ready(T val)
     {
-        // Wrapper for data that doesn't have a .poll() method
-        return make(std::move(val), [](T &v) { return res<T>::ready(std::move(v)); });
+        return Future{Immediate_impl<T>{.val = std::move(val)}, Call_poll{}};
     }
 
-    export inline auto ready()
+    export template <typename T>
+    auto error(std::error_code ec)
     {
-        struct empty_t {};
-        return make(empty_t{}, [](empty_t &) { return res<void>::ready(); });
+        return Future{Immediate_impl<T>{.err = ec}, Call_poll{}};
     }
+
+    export template <typename T>
+    using ready_t = Future<Immediate_impl<T>, Call_poll>;
+    export template <typename T>
+    using error_t = Future<Immediate_impl<T>, Call_poll>;
 
     export template <typename State, typename BodyFn>
     auto loop(State &&s, BodyFn &&fn)
@@ -646,6 +810,22 @@ auto Future<S, P>::then(Fn &&fn) &&
 {
     using T = fut::Then_impl<Future, std::decay_t<Fn>>;
     return fut::make(T{std::move(*this), std::forward<Fn>(fn)}, fut::Call_poll{});
+}
+
+template <typename S, typename P>
+template <typename Fn>
+auto Future<S, P>::map(Fn &&fn) &&
+{
+    using M = fut::Map_impl<Future, std::decay_t<Fn>>;
+    return fut::make(M{std::move(*this), std::forward<Fn>(fn)}, fut::Call_poll{});
+}
+
+template <typename S, typename P>
+template <typename Fn>
+auto Future<S, P>::or_else(Fn &&fn) &&
+{
+    using O = fut::Or_else_impl<Future, std::decay_t<Fn>>;
+    return fut::make(O{std::move(*this), std::forward<Fn>(fn)}, fut::Call_poll{});
 }
 
 template <typename S, typename P>
