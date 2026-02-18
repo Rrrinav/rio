@@ -20,7 +20,7 @@ auto make_echo_client(ClientContext ctx)
                 std::move(ctx),
                 [](ClientContext& c) -> rio::fut::res<ClientContext> {
                     using rio::fut::res;
-                    auto r = rio::try_read(c.sock, c.buf);
+                    auto r = rio::io::try_read(c.sock, c.buf);
 
                     if (!r)
                     {
@@ -50,7 +50,7 @@ auto make_echo_client(ClientContext ctx)
                         std::move(c),
                         [](ClientContext& c) -> rio::fut::res<ClientContext> {
                             std::string_view msg = "Timeout: You were too slow! Bye!\n";
-                            auto r = rio::try_write(c.sock, std::span(msg));
+                            auto r = rio::io::try_write(c.sock, std::span(msg));
 
                             if (!r && r.error().code == std::errc::operation_would_block)
                                 return rio::fut::res<ClientContext>::pending();
@@ -63,7 +63,7 @@ auto make_echo_client(ClientContext ctx)
                 return rio::fut::make(std::move(c),
                     [](ClientContext &c) -> rio::fut::res<ClientContext> {
                         using rio::fut::res;
-                        auto r = rio::try_write(c.sock, std::span(c.buf).subspan(0, c.n));
+                        auto r = rio::io::try_write(c.sock, std::span(c.buf).subspan(0, c.n));
 
                         if (!r)
                         {
@@ -101,7 +101,7 @@ auto main() -> int
         std::move(listener),
         [](rio::Tcp_socket &l) -> rio::fut::res<ClientContext> {
             rio::address addr{};
-            auto r = rio::try_accept(l, addr);
+            auto r = rio::io::try_accept(l);
 
             if (!r)
             {
@@ -109,9 +109,10 @@ auto main() -> int
                     return rio::fut::res<ClientContext>::pending();
                 return rio::fut::res<ClientContext>::error(r.error().code);
             }
+            addr = r->address;
 
             std::println("New Client Connected: {}", addr);
-            return rio::fut::res<ClientContext>::ready({.sock = std::move(r.value()), .addr = addr});
+            return rio::fut::res<ClientContext>::ready({.sock = std::move(r->client), .addr = addr});
         }
     };
 

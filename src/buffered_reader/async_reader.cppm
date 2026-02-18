@@ -215,7 +215,7 @@ public:
     /// (Async because it might need to refill from disk/net)
     auto peek()
     {
-        return rio::Future(detail::Peek_op_impl<Async_buffered_reader>{this}, [](auto &op) { return op.poll(); });
+        return rio::Future(detail::Peek_op_impl<Async_buffered_reader>{this}, rio::fut::Call_poll{});
     }
 
     /// \brief Advance cursor manually (Sync operation).

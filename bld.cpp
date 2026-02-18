@@ -22,12 +22,14 @@ auto &bld_cfg = bld::Config::get();
 struct Config
 {
     // Directories
-    const fs::path dir_src = "src/";
-    const fs::path dir_bin = "bin/";
-    const fs::path dir_pcm = "bin/pcms/";
-    const fs::path dir_obj = "bin/objs/";
-    const fs::path dir_std = "bin/std/";
+    const fs::path dir_src  = "src/";
+    const fs::path dir_bin  = "bin/";
+    const fs::path dir_pcm  = "bin/pcms/";
+    const fs::path dir_obj  = "bin/objs/";
+    const fs::path dir_std  = "bin/std/";
     const fs::path dir_libs = "bin/libs/";
+
+    const fs::path dir_example_bin = "bin-example/";
 
     // Artifacts
     const std::string exe_name = "rio";
@@ -196,9 +198,9 @@ bool build_file(std::string input, std::string output,const Config& cfg)
     return bld::execute(cmd);
 }
 
-int buld_examples(Config cfg, std::string path = "./examples/")
+int build_examples(Config cfg, std::string path = "./examples/")
 {
-    std::string output_dir = "examples-bin";
+    std::string output_dir = cfg.dir_example_bin;
     bld::fs::create_dir_if_not_exists(output_dir);
     std::vector<std::string> failed;
     std::size_t total = 0;
@@ -243,6 +245,11 @@ int main(int argc, char *argv[])
         bld::fs::remove_dir(cfg.dir_bin);
         return 0;
     }
+    if (bld_cfg["clean-example"])
+    {
+        bld::fs::remove_dir(cfg.dir_example_bin);
+        return 0;
+    }
 
     if (bld_cfg["run"])
     {
@@ -256,7 +263,7 @@ int main(int argc, char *argv[])
     }
 
     if (bld_cfg["build-examples"])
-        return buld_examples(cfg, "./examples/");
+        return build_examples(cfg, "./examples/");
 
     if (bld_cfg["compile"])
     {

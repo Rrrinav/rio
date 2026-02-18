@@ -20,11 +20,11 @@ auto main() -> int
 
     for (;;)
     {
-        if (auto res = rio::accept(server_sock); res)
+        if (auto res = rio::io::accept(server_sock); res)
         {
             auto [ client_sock, client_addr ] = std::move(res.value());
             std::println(" [RIO]: Client: {} connected.", client_addr);
-            auto n = rio::io::read(client_sock, std::span{buf});
+            auto n = rio::io::read(client_sock, std::span{buf}).value();
             std::print(" [RIO]: Received: ");
             if (n == 0)
             {
@@ -39,7 +39,7 @@ auto main() -> int
             else
                 std::print(" {}", sv);
 
-            if (auto sz = rio::io::write(client_sock, std::span{buf, n}); sz < 0)
+            if (auto sz = rio::io::write(client_sock, std::span{buf, n}).value(); sz < 0)
             {
                 std::println("{}", (std::make_error_code(static_cast<std::errc>(sz))).message());
                 std::cout.flush();

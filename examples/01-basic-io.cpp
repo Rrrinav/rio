@@ -52,7 +52,7 @@ int main()
     }
 
     std::string input;
-    if (auto res = rio::io::read_line(in); !res)
+    if (auto res = rio::io::read_till(in, '\n'); !res)
     {
         std::println("{}", res.error());
         return 1;

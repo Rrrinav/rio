@@ -785,6 +785,26 @@ namespace rio {
     export template <typename T>
     using error_t = Future<Immediate_impl<T>, Call_poll>;
 
+    export template <>
+    struct Immediate_impl<void>
+    {
+        using value_type = void;
+        bool is_ready = false;
+        std::error_code err{};
+
+        res<void> poll()
+        {
+            if (err)
+                return res<void>::error(err);
+            // If constructed via ready(), implies success
+            return res<void>::ready();
+        }
+
+        friend auto tag_invoke(poll_t, Immediate_impl &i) { return i.poll(); }
+    };
+
+    export inline auto ready() { return Future{Immediate_impl<void>{.is_ready = true}, Call_poll{}}; }
+
     export template <typename State, typename BodyFn>
     auto loop(State &&s, BodyFn &&fn)
     {
