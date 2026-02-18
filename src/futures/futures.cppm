@@ -94,6 +94,7 @@ export template <typename Fn, typename State>
 concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_result_t<Fn &, State &>>::value;
 
 namespace fut {
+
 export struct Call_poll
 {
     template <typename T>
@@ -103,28 +104,64 @@ export struct Call_poll
     }
 };
 
+export struct Call_poll_ptr
+{
+    template <typename T>
+    auto operator()(T &t) const
+    {
+        return t->poll();
+    }
+};
+
 export template <typename State, typename Fn>
-auto make(State &&s, Fn &&fn);
+auto make(State &&s, Fn &&fn = rio::fut::Call_poll{});
+
 export template <Pollable F, typename Fn>
 struct Then_impl;
+
 export template <typename F>
 struct Timeout_impl;
+
 export template <typename F, typename Callback, typename RecoveryFut>
 struct Timeout_with_impl;
+
 export template <typename State, typename BodyFn>
 struct Loop_impl;
+
 } // namespace fut
 
-export template <typename State, typename Poll_fn>
+export template <typename State, typename Poll_fn = rio::fut::Call_poll>
 struct Future
 {
     using state_type = State;
     using value_type = typename std::invoke_result_t<Poll_fn &, State &>::value_type;
 
-    State data;
-    Poll_fn fn;
+    static_assert(
+        !std::is_reference_v<State>,
+        "\n"
+        "  Future must own its State. References are not allowed.\n"
+        "  Though it may be fine for a lot of cases, so you can comment this out and compile again, if you need it anyhow.\n"
+        "  Sorry"
+    );
 
-    Future(State s, Poll_fn f) : data(std::move(s)), fn(std::move(f))
+    State data{};
+    Poll_fn fn = rio::fut::Call_poll{};
+
+    template <typename S>
+        requires std::constructible_from<State, S> && (!std::same_as<std::decay_t<S>, Future>)
+    explicit Future(S &&s) : data(std::forward<S>(s)), fn(Poll_fn{})
+    {
+        static_assert(std::invocable<Poll_fn &, State &>, "The provided State is not compatible with the default Call_poll mechanism.");
+    }
+
+    explicit Future() : data(State{}), fn(Poll_fn{})
+    {
+        static_assert(!std::same_as<std::decay_t<State>, Future>, "State can't be future type itself");
+        static_assert(std::invocable<Poll_fn &, State &>, "The provided State is not compatible with the default Call_poll mechanism.");
+    }
+
+    template <typename S, typename P>
+    Future(S &&s, P &&p) : data(std::forward<S>(s)), fn(std::forward<P>(p))
     {}
 
     Future(Future &&) noexcept(std::is_nothrow_move_constructible_v<State> && std::is_nothrow_move_constructible_v<Poll_fn>) = default;
@@ -192,7 +229,6 @@ struct Then_impl
     Fn fn;
     enum class Phase : uint8_t { First, Next, Done } phase = Phase::First;
     std::optional<next_future_type> next{};
-
     Then_impl(Fut f, Fn func) : first_fut(std::move(f)), fn(std::move(func))
     {}
 
@@ -305,9 +341,12 @@ struct Or_else_impl
 
     static_assert(
         Pollable<next_future_type> && std::is_same_v<typename next_future_type::value_type, value_type>,
-        "or_else recovery function must return a Future with the same value_type");
+        "or_else recovery function must return a Future with the same value_type"
+    );
+
     Fut first_fut;
     Fn fn;
+
     enum class Phase : uint8_t { First, Recovery, Done } phase = Phase::First;
     std::optional<next_future_type> recovery{};
 

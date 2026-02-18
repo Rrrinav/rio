@@ -101,7 +101,7 @@ auto bind(StateT &s)
 {
     rio::Promise<StateT> p{.state = &s};
 
-    auto f = rio::fut::make(&s, [](StateT *ptr) { return ptr->poll(); });
+    auto f = rio::fut::make(&s, rio::fut::Call_poll_ptr{});
     return std::pair{p, std::move(f)};
 }
 
@@ -110,7 +110,7 @@ auto bind(StateT *s)
 {
     rio::Promise<StateT> p{.state = s};
 
-    auto f = rio::fut::make(s, [](StateT *ptr) { return ptr->poll(); });
+    auto f = rio::fut::make(s, rio::fut::Call_poll_ptr{});
     return std::pair{p, std::move(f)};
 }
 
@@ -120,7 +120,7 @@ auto make()
     auto shared_state = std::make_shared<State<T>>();
 
     rio::Promise<State<T>> p{.state = shared_state.get()};
-    auto f = rio::fut::make(std::move(shared_state), [](std::shared_ptr<State<T>> &s) { return s->poll(); });
+    auto f = rio::fut::make(std::move(shared_state), rio::fut::Call_poll_ptr{});
     return std::pair{p, std::move(f)};
 }
 
@@ -129,7 +129,7 @@ auto make_unique()
 {
     auto unique_state = std::make_unique<State<T>>();
     rio::Promise<State<T>> p{.state = unique_state.get()};
-    auto f = rio::fut::make(std::move(unique_state), [](std::unique_ptr<State<T>> &s) { return s->poll(); });
+    auto f = rio::fut::make(std::move(unique_state), rio::fut::Call_poll_ptr{});
     return std::pair{p, std::move(f)};
 }
 

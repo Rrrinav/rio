@@ -267,7 +267,7 @@ export template <typename T, typename Stream, size_t N>
 auto load(Async_buffered_reader<Stream, N> &reader)
 {
     using Op = detail::Load_op<T, Async_buffered_reader<Stream, N>>;
-    return rio::Future(Op(&reader), [](Op &op) { return op.poll(); });
+    return rio::Future(Op(&reader), rio::fut::Call_poll{});
 }
 
 } // namespace fut::buff

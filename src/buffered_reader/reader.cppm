@@ -7,6 +7,8 @@ import std.compat;
 
 import :io;
 
+// TODO: Introduce endianness because currently we assume little endian.
+
 #define __USED_IN_RIO_
 #define __RIO_IO_MODULE_PRESENT_
 
@@ -45,17 +47,37 @@ concept Readable = requires(T &t, std::uint8_t *ptr, std::size_t len) {
 
 namespace detail {
 
+template <typename T>
+constexpr T apply_endian(T val, std::endian target_endian) noexcept
+{
+    if (target_endian == std::endian::native)
+        return val;
+
+    auto bytes = std::bit_cast<std::array<std::byte, sizeof(T)>>(val);
+
+    // 3. Reverse the bytes logically.
+    // (Manual loop is used here to avoid including <algorithm> headers if not needed)
+    for (std::size_t i = 0; i < sizeof(T) / 2; ++i) {
+        std::swap(bytes[i], bytes[sizeof(T) - 1 - i]);
+    }
+
+    // 4. Reconstruct T from the reversed bytes.
+    return std::bit_cast<T>(bytes);
+}
+
 // Internal policy to handle stack vs heap buffer allocation
 export template <std::size_t N>
 struct Storage_policy
 {
     alignas(std::max_align_t) std::byte data_[N];
-    Storage_policy(std::size_t) noexcept
-    {}
+
+    Storage_policy(std::size_t) noexcept {}
+
     std::uint8_t *start() noexcept
     {
         return reinterpret_cast<std::uint8_t *>(data_);
     }
+
     std::size_t capacity() const noexcept
     {
         return N;
@@ -83,9 +105,12 @@ void skip_whitespace(Reader &reader)
 {
     while (true) {
         auto view = reader.peek();
+
         if (view.empty())
             return;
+
         std::size_t i = 0;
+
         while (i < view.size()) {
             if (!std::isspace(static_cast<unsigned char>(view[i]))) {
                 reader.advance(i);
@@ -108,12 +133,17 @@ export template <typename T>
 struct load_traits
 {
     template <typename Reader>
-    static std::expected<void, std::errc> load(Reader &r, T &out)
+    static std::expected<void, std::errc> load(Reader &r, T &out, std::endian endian = std::endian::native)
     {
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::size_t n = r.read(&out, sizeof(T));
             if (n != sizeof(T))
                 return std::unexpected(std::errc::bad_message);
+
+            if constexpr (std::is_arithmetic_v<T> || std::is_enum_v<T>) {
+                out = detail::apply_endian(out, endian);
+            }
+
             return {};
         } else {
             static_assert(sizeof(T) == 0, "Type is not Trivially Copyable. Specialize load_traits.");
@@ -516,12 +546,14 @@ std::size_t read_till(Reader &reader, char delimiter, std::span<char> out)
 /// \brief Load a value of type T from the stream in binary format.
 ///
 /// For POD types (int, float, struct), performs a direct memory copy.
+///
+/// \detail Works fine only for native endianness for structs
 /// \return The loaded value or an error code.
 export template <typename T, typename Reader>
-[[nodiscard]] std::expected<T, std::errc> load(Reader &reader)
+[[nodiscard]] std::expected<T, std::errc> load(Reader &reader, std::endian endian = std::endian::native)
 {
     T value;
-    auto res = buff::load_traits<T>::load(reader, value);
+    auto res = buff::load_traits<T>::load(reader, value, endian);
     if (!res)
         return std::unexpected(res.error());
     return value;

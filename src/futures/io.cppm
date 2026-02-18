@@ -350,10 +350,6 @@ auto stop_read_after(rio::context &ctx, int fd, std::span<char> buf, std::chrono
     return rio::Future(Async_handle{s}, Async_poller{});
 }
 
-// ==========================================
-// API Functions (Using Named Call_poll)
-// ==========================================
-
 export auto write_all(rio::context &ctx, int fd, std::span<const char> full_buf)
 {
     return rio::fut::make(Write_all_impl{&ctx, fd, full_buf}, rio::fut::Call_poll{});
