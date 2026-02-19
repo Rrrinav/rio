@@ -61,6 +61,18 @@ export struct context
         }
         return *this;
     }
+    void cancel_request(void *original_user_data)
+    {
+        auto sqe = this->sqe();
+        if (!sqe)
+            return;
+
+        io_uring_prep_cancel(sqe, original_user_data, 0);
+
+        io_uring_sqe_set_data(sqe, nullptr);
+
+        this->submit();
+    }
 
     [[nodiscard]]
     auto sqe() -> io_uring_sqe *

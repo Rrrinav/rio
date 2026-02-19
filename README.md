@@ -3,7 +3,8 @@
 An async runtime based on liburing.
 
 > [!WARNING]
-    Doesn't use raw io_uring, I am using linux liburing abstraction layer/library.
+Doesn't use raw io_uring, I am using linux liburing abstraction layer/library.
+Single Threaded only.
 
 Read requirments.
 

@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <print>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -189,6 +188,17 @@ bool build_std_module(const Config &cfg)
     return true;
 }
 
+bld::Proc build_file_async(std::string input, std::string output, const Config &cfg)
+{
+    bld::Command cmd = make_cmd({ cfg.compiler });
+    cmd.add_parts("-o", output, input);
+    cmd.add_parts(cfg.dir_libs.string() + cfg.lib_static);
+    cmd.parts.append_range(cfg.flags_common);
+    cmd.parts.append_range(cfg.get_mod_paths());
+    cmd.parts.append_range(cfg.flags_linker);
+    return bld::execute_async(cmd);
+}
+
 bool build_file(std::string input, std::string output, const Config &cfg)
 {
     bld::Command cmd = make_cmd({ cfg.compiler });
@@ -204,10 +214,11 @@ int build_examples(Config cfg, std::string path = "./examples/")
 {
     std::string output_dir = cfg.dir_example_bin;
     bld::fs::create_dir_if_not_exists(output_dir);
-    std::vector<std::string> failed;
-    std::size_t total = 0;
+
+    std::vector<bld::Proc> procs;
+    std::vector<std::string> files;
+
     bld::fs::walk_directory(path, [&](bld::fs::Walk_fn_opt &opt) -> bool {
-        std::println("{}", opt.path.string());
         if (std::filesystem::is_directory(opt.path))
             return true;
         if (opt.path.extension() != ".cpp")
@@ -215,18 +226,29 @@ int build_examples(Config cfg, std::string path = "./examples/")
         std::filesystem::path relative_path = std::filesystem::relative(opt.path, path);
         std::string actual_file = relative_path.string();
         auto output_path = output_dir + "/" + actual_file;
-        total++;
-        if (!build_file(opt.path.string(), output_path, cfg))
-            failed.push_back(actual_file);
+        files.push_back(opt.path.string());
+        bld::log(bld::Log_type::INFO, "Building: " + opt.path.string());
+        procs.push_back(build_file_async(opt.path.string(), output_path.substr(0, output_path.size() - std::string(".cpp").size()), cfg));
         return true;
     });
-    bool res = failed.empty();
-    if (!res) {
-        bld::log(bld::Log_type::ERR, "Failed files.");
-        for (const auto &f : failed)
-            bld::log(bld::Log_type::ERR, "    " + f);
+
+    auto res = bld::wait_procs(procs);
+    if (res.failed_indices.size() > 0)
+    {
+        bld::log(bld::Log_type::ERR, "\n");
+        bld::log(bld::Log_type::ERR, "Failed:");
+        for (auto failed : res.failed_indices)
+            bld::log(bld::Log_type::ERR, "    " + files[failed]);
+
+        return 1;
     }
-    return res ? 0 : 1;
+
+    bld::log(bld::Log_type::INFO, "All built successfully");
+
+    std::cerr.flush();
+    std::cout.flush();
+
+    return 0;
 }
 
 int main(int argc, char *argv[])
