@@ -98,6 +98,7 @@ namespace fut {
 export struct Call_poll
 {
     template <typename T>
+    requires requires(T& ref) { ref.poll(); }
     auto operator()(T &t) const
     {
         return t.poll();
@@ -107,6 +108,7 @@ export struct Call_poll
 export struct Call_poll_ptr
 {
     template <typename T>
+    requires requires(T& ref) { ref->poll(); }
     auto operator()(T &t) const
     {
         return t->poll();
@@ -151,6 +153,12 @@ struct Future
         requires std::constructible_from<State, S> && (!std::same_as<std::decay_t<S>, Future>)
     explicit Future(S &&s) : data(std::forward<S>(s)), fn(Poll_fn{})
     {
+        static_assert(std::invocable<Poll_fn &, State &>, "The provided State is not compatible with the default Call_poll mechanism.");
+    }
+
+    explicit Future(State &&s) : data(std::forward<State>(s)), fn(Poll_fn{})
+    {
+        static_assert(!std::same_as<std::decay_t<State>, Future>, "State can't be future type itself");
         static_assert(std::invocable<Poll_fn &, State &>, "The provided State is not compatible with the default Call_poll mechanism.");
     }
 
@@ -835,6 +843,18 @@ export template <typename State, typename Poll_fn>
 auto make(State &&s, Poll_fn &&fn)
 {
     return Future<std::decay_t<State>, std::decay_t<Poll_fn>>{std::forward<State>(s), std::forward<Poll_fn>(fn)};
+}
+
+export template <typename State, typename Poll_fn>
+auto make(State &&s)
+{
+    return Future<std::decay_t<State>, std::decay_t<Poll_fn>>{std::forward<State>(s), fut::Call_poll{}};
+}
+
+export template <typename State, typename Poll_fn>
+auto make_ptr_state(State &&s)
+{
+    return Future<std::decay_t<State>, std::decay_t<Poll_fn>>{std::forward<State>(s), fut::Call_poll_ptr{}};
 }
 
 export template <typename T>

@@ -50,7 +50,8 @@ auto handle_client(rio::context &ctx, rio::Tcp_socket sock, rio::address addr)
 }
 
 using ClientFuture = decltype(handle_client(
-    std::declval<rio::context &>(), std::declval<rio::Tcp_socket>(), std::declval<rio::address>()));
+    std::declval<rio::context &>(), std::declval<rio::Tcp_socket>(), std::declval<rio::address>())
+);
 
 int main()
 {

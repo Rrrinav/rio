@@ -23,12 +23,12 @@ struct async_stream_traits
 };
 
 template <typename T>
-concept AsyncReadable = requires(rio::context &ctx, T &t, std::span<char> buf) {
+concept Async_readable = requires(rio::context &ctx, T &t, std::span<char> buf) {
     { async_stream_traits<T>::read(ctx, t, buf) };
 };
 
 // Forward Declaration
-export template <AsyncReadable Stream, std::size_t BufferSize>
+export template <Async_readable Stream, std::size_t BufferSize>
 class Async_buffered_reader;
 
 namespace detail {
@@ -195,7 +195,7 @@ struct Load_op
 
 } // namespace detail
 
-export template <AsyncReadable Stream, std::size_t BufferSize = 0>
+export template <Async_readable Stream, std::size_t Buffer_size = 0>
 class Async_buffered_reader
 {
 public:
@@ -206,7 +206,7 @@ public:
 
     rio::context &ctx_;
     Stream &stream_;
-    rio::buff::detail::Storage_policy<BufferSize> buffer_;
+    rio::buff::detail::Storage_policy<Buffer_size> buffer_;
     size_type cursor_{0};
     size_type valid_bytes_{0};
     bool eof_reached_{false};
@@ -241,6 +241,9 @@ public:
         return cursor_ >= valid_bytes_;
     }
 };
+
+export template <Async_readable Stream, std::size_t Buffer_size = 0>
+explicit Async_buffered_reader(rio::context, Stream) -> Async_buffered_reader<Stream, Buffer_size>;
 
 namespace fut::buff {
 

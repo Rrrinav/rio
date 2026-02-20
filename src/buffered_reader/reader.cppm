@@ -344,7 +344,7 @@ struct stream_traits<Memory_source>
 ///
 /// \tparam Stream The underlying source type (must satisfy Readable).
 /// \tparam BufferSize Size of internal buffer. 0 = Dynamic (Heap), >0 = Static (Stack).
-export template <buff::Readable Stream, std::size_t BufferSize = 0>
+export template <buff::Readable Stream, std::size_t Buffer_size = 0>
 class Buffered_reader
 {
 public:
@@ -353,7 +353,7 @@ public:
     using view_type = std::span<const value_type>;
 
     Stream &stream_;
-    buff::detail::Storage_policy<BufferSize> buffer_;
+    buff::detail::Storage_policy<Buffer_size> buffer_;
     size_type cursor_{0};      ///< Current read position in buffer
     size_type valid_bytes_{0}; ///< Total valid bytes currently in buffer
 
@@ -452,6 +452,9 @@ private:
         return 0;
     }
 };
+
+export template <buff::Readable Stream, std::size_t BufferSize = 0>
+Buffered_reader(Stream) -> Buffered_reader<Stream, BufferSize>;
 
 namespace buff {
 

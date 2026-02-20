@@ -9,7 +9,7 @@ import std;
 import :context;
 import :handle;
 import :promise;
-import :futures; // Contains rio::fut::Call_poll
+import :futures;
 
 namespace rio::fut {
 
@@ -352,7 +352,7 @@ auto stop_read_after(rio::context &ctx, int fd, std::span<char> buf, std::chrono
     io_uring_sqe_set_data(sqe_timer, &timer_req->header);
 
     ctx.submit();
-    return rio::Future(Async_handle{s, &ctx}, rio::fut::Call_poll{});
+    return rio::Future(Async_handle{s, &ctx});
 }
 
 export auto write_all(rio::context &ctx, int fd, std::span<const char> full_buf)
