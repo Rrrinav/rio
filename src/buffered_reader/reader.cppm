@@ -423,6 +423,45 @@ public:
         return total_read;
     }
 
+    auto read_byte()
+    {
+        value_type val{};
+        this->read(&val, 1);
+        return val;
+    }
+
+    std::optional<value_type> read_byte_opt()
+    {
+        value_type val{};
+        if (this->read(&val, 1) != 1)
+            return std::nullopt;
+        return val;
+    }
+
+    auto read_bytes(std::size_t count)
+    {
+        std::vector<std::uint8_t> val;
+        val.resize(count);
+
+        auto n = this->read(val.data(), count);
+        val.resize(n);
+
+        return val;
+    }
+
+    auto read_bytes_opt(size_type count) -> std::optional<std::vector<uint8_t>>
+    {
+        std::vector<uint8_t> out(count);
+
+        auto n = this->read(out.data(), count);
+
+        if (n == 0)
+            return std::nullopt;
+
+        out.resize(n);
+        return out;
+    }
+
     /// \brief Bytes remaining in the current buffer chunk.
     [[nodiscard]] size_type remaining() const noexcept
     {
@@ -461,13 +500,15 @@ namespace buff {
 /// \brief Reads from the reader until a delimiter is found.
 /// \return String containing data up to the delimiter (delimiter is consumed but not returned).
 export template <typename Reader>
-std::string read_till(Reader &reader, char delimiter)
+std::optional<std::string> read_till(Reader &reader, char delimiter)
 {
     std::string result;
     while (true) {
         auto view = reader.peek();
         if (view.empty())
-            return result;
+            if (result.empty())
+                return std::nullopt;
+        return result;
 
         const void *match = std::memchr(view.data(), delimiter, view.size());
         if (match) {

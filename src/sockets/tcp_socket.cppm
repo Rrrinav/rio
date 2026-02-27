@@ -108,53 +108,54 @@ export struct Tcp_socket
     }
 
     template <typename T>
-    auto set_option(int level, int optname, T value) -> result<void>
+    auto set_option(int level, int optname, T value) -> Tcp_socket&
     {
-        if (::setsockopt(fd.native_handle(), level, optname, &value, sizeof(value)) == -1)
-            return std::unexpected(Err{errno, "setsockopt failed"});
-        return {};
+        ::setsockopt(fd.native_handle(), level, optname, &value, sizeof(value));
+        return *this;
     }
 
-    auto set_reuse_address(bool enable) -> result<void>
+    auto set_reuse_address(bool enable) -> Tcp_socket&
     {
         int val = enable ? 1 : 0;
-        if (auto r = set_option(SOL_SOCKET, SO_REUSEADDR, val); !r)
-            return r;
-        return set_option(SOL_SOCKET, SO_REUSEPORT, val);
+        set_option(SOL_SOCKET, SO_REUSEADDR, val);
+        set_option(SOL_SOCKET, SO_REUSEPORT, val);
+
+        return *this;
     }
 
-    auto set_nodelay(bool enable) -> result<void>
+    auto set_nodelay(bool enable) -> Tcp_socket&
     {
-        return set_option(IPPROTO_TCP, TCP_NODELAY, enable ? 1 : 0);
-    }
-    auto set_keepalive(bool enable) -> result<void>
-    {
-        return set_option(SOL_SOCKET, SO_KEEPALIVE, enable ? 1 : 0);
+        set_option(IPPROTO_TCP, TCP_NODELAY, enable ? 1 : 0);
+        return *this;
     }
 
-    auto set_policy(bool blocking) -> result<void>
+    auto set_keepalive(bool enable) -> Tcp_socket&
+    {
+        set_option(SOL_SOCKET, SO_KEEPALIVE, enable ? 1 : 0);
+        return *this;
+    }
+
+    auto set_blocking_policy(bool blocking) -> Tcp_socket&
     {
         int flags = ::fcntl(fd.native_handle(), F_GETFL, 0);
-        if (flags == -1)
-            return std::unexpected(Err{errno, "fcntl(F_GETFL) failed"});
 
         if (blocking)
             flags &= ~O_NONBLOCK;
         else
             flags |= O_NONBLOCK;
 
-        if (::fcntl(fd.native_handle(), F_SETFL, flags) == -1)
-            return std::unexpected(Err{errno, "fcntl(F_SETFL) failed"});
-        return {};
+        ::fcntl(fd.native_handle(), F_SETFL, flags);
+
+        return *this;
     }
 
-    auto set_blocking() -> result<void>
+    auto set_blocking() -> Tcp_socket&
     {
-        return set_policy(true);
+        return set_blocking_policy(true);
     }
-    auto set_nonblocking() -> result<void>
+    auto set_nonblocking() -> Tcp_socket&
     {
-        return set_policy(false);
+        return set_blocking_policy(true);
     }
 
     template <typename T>

@@ -77,33 +77,30 @@ auto send_file(Out_handle &out, const rio::file &in, size_t count) -> result<siz
     return send_file(out.fd.native_handle(), in.fd.native_handle(), count, nullptr);
 }
 
-export auto read_all(const rio::file &f) -> result<std::string>
+export auto read_all(const rio::file &f, std::string &buff) -> result<void>
 {
     struct stat st;
     if (::fstat(f.fd.native_handle(), &st) < 0)
         return std::unexpected(rio::Err::sys("fstat failed"));
 
-    std::string out;
     try {
-        out.resize(st.st_size);
+        buff.resize(st.st_size);
     } catch (...) {
         return std::unexpected(rio::Err{ENOMEM, "Failed to allocate file buffer"});
     }
 
-    if (auto res = rio::io::read_till_full(f.fd.native_handle(), std::span{out}); !res)
+    if (auto res = rio::io::read_till_full(f.fd.native_handle(), std::span{buff}); !res)
         return std::unexpected(res.error());
-
-    return out;
-}
-
-export auto read_all(const rio::file &f, std::string &buff) -> result<void>
-{
-    if (auto res = read_all(f); !res)
-        return std::unexpected(res.error());
-    else
-        buff = res.value();
 
     return {};
+}
+
+export auto read_all(const rio::file &f) -> result<std::string>
+{
+    std::string out;
+    if (auto res = read_all(f, out); !res)
+        return std::unexpected(res.error());
+    return out;
 }
 
 } // namespace rio::io

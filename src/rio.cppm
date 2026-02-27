@@ -18,6 +18,7 @@ export import :context;
 export import :asio;
 export import :futures;
 export import :promise;
+export import :fut.task;
 export import :fut.io;
 export import :fut.tcp.io;
 export import :fut.file.io;
