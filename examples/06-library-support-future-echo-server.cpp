@@ -31,6 +31,10 @@ auto make_client(rio::context &ctx, rio::Tcp_socket s, rio::address a)
                     return rio::fut::res<void>::ready();
                 });
             });
+    }).or_else([](std::error_code code) {
+        if (code!= std::errc::broken_pipe && code!= std::errc::connection_aborted)
+            std::println(" [RIO]: task terminated with error: {}",  code.message());
+        return rio::fut::ready();
     });
 }
 

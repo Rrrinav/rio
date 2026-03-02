@@ -15,6 +15,7 @@ export import :handle;
 export import :file;
 export import :socket;
 export import :context;
+export import :runtime;
 export import :asio;
 export import :futures;
 export import :promise;

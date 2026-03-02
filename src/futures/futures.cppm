@@ -101,6 +101,7 @@ export struct Call_poll
     requires requires(T& ref) { ref.poll(); }
     auto operator()(T &t) const
     {
+        static_assert(requires(T& ref) { ref.poll(); }, "You must have `.poll()` function.");
         return t.poll();
     }
 };
@@ -144,6 +145,13 @@ struct Future
         "  Future must own its State. References are not allowed.\n"
         "  Though it may be fine for a lot of cases, so you can comment this out and compile again, if you need it anyhow.\n"
         "  Sorry"
+    );
+
+    static_assert(std::invocable<Poll_fn &, State &>, 
+        "\n"
+        "  The provided State is not compatible with the Poll mechanism.\n"
+        "  Ensure your state has a `poll()` method that takes NO arguments,\n"
+        "  and returns a `rio::fut::res<T>`.\n"
     );
 
     State data{};
@@ -936,6 +944,7 @@ auto both(Fut1 &&f1, Fut2 &&f2)
 } // namespace fut
 
 template <typename S, typename P>
+    //requires std::invocable<P&, S&>
 template <typename Fn>
 auto Future<S, P>::then(Fn &&fn) &&
 {

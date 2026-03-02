@@ -9,26 +9,6 @@ import rio;
     }                                                                                                                                      \
     auto var = std::move(*__res_##var)
 
-std::string escape_string(std::string_view input)
-{
-    std::string result;
-    // Reserve extra space to avoid reallocation during escaping
-    result.reserve(input.size() + input.size() / 4); 
-
-    for (char c : input) {
-        switch (c) {
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
-            case '\\': result += "\\\\"; break;
-            case '\"': result += "\\\""; break;
-            default:   result += c; break;
-        }
-    }
-
-    return result;
-}
-
 struct Session
 {
     rio::context &ctx;
@@ -54,7 +34,7 @@ struct Session
                 } else {
                     while (!msg->empty() && (msg->back() == '\n' || msg->back() == '\r'))
                         msg->pop_back();
-                    std::println(" [RIO]: {} sent: '{:?}'", sess->addr, escape_string(*msg));
+                    std::println(" [RIO]: {} sent: '{:?}'", sess->addr, rio::util::escape_string(*msg));
                     msg->push_back('\n');
                     sess->write_buf = std::move(*msg);
                 }
@@ -65,6 +45,10 @@ struct Session
                     return rio::fut::error<std::shared_ptr<Session>>(std::make_error_code(std::errc::broken_pipe));
                 return rio::fut::ready(sess);
             });
+    }).or_else([] (std::error_code ec) {
+        if (ec != std::errc::broken_pipe && ec != std::errc::connection_aborted)
+            std::println(" [RIO]: task terminated with error: {}",  ec.message());
+        return rio::fut::ready();
     });
 }
 

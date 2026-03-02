@@ -10,3 +10,6 @@ bld.old
 rio_bin
 compile_commands.json
 main2
+main
+main2.cpp
+bin-example/
