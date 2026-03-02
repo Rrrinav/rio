@@ -41,7 +41,7 @@ struct Session
     {}
 };
 
-rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket sock, rio::address addr)
+/*auto*/ rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket sock, rio::address addr)
 {
     auto session = std::make_shared<Session>(ctx, std::move(sock), addr);
 
