@@ -15,8 +15,8 @@ struct Server
 
 // You can accept session* insetad of void*, this is made sure by templates
 // You just have to send same thing to accepti function and receive same thing in callback.
-void read_callback(rio::context &ctx, rio::result<std::size_t> res, Session *s);
-void write_callback(rio::context &ctx, rio::result<std::size_t> res, Session *s);
+void read_callback  (rio::context &ctx, rio::result<std::size_t> res, Session *s);
+void write_callback (rio::context &ctx, rio::result<std::size_t> res, Session *s);
 void accept_callback(rio::context &ctx, rio::result<rio::as::accept_result> res, Server *srv);
 
 auto main() -> int
@@ -30,7 +30,7 @@ auto main() -> int
     }
 
     auto [sock, addr] = std::move(*res);
-    Server server{ .listener = std::move(sock) };
+    Server server{.listener = std::move(sock)};
 
     std::println(" [RIO]: Listening on 8000...");
 
@@ -82,7 +82,7 @@ void accept_callback(rio::context &ctx, rio::result<rio::as::accept_result> res,
     }
 
     std::println(" [RIO]: New Connection: {}", res->address.to_string());
-    auto *s = new Session{ .sock = std::move(res->client), .addr = res->address, .buffer{} };
+    auto *s = new Session{.sock = std::move(res->client), .addr = res->address, .buffer{}};
 
     // Since we are sending Session* here, we must accept same type there.
     // They have to be poitners. This applies to all callbacks.

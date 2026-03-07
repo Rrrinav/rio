@@ -25,8 +25,10 @@ export import :fut.tcp.io;
 export import :fut.file.io;
 export import :buff_reader;
 export import :buff_reader_async;
+export import :http;
 
 namespace rio {
+
 export auto kill(rio::handle &h) -> void
 {
     if (h.fd != -1) {
@@ -46,6 +48,8 @@ auto try_kill(rio::handle &h, std::source_location loc = std::source_location::c
 
     if (::close(fd) == -1)
         return std::unexpected(Err{errno, std::format("{}:{}: Couldn't close handle (fd = {}).", loc.file_name(), loc.line(), h.fd)});
+
     return {};
 }
+
 } // namespace rio

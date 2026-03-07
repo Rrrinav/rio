@@ -40,9 +40,8 @@ auto make_client(rio::context &ctx, rio::Tcp_socket s, rio::address a)
 
 // TODO: Make knowing types easy.
 // I am sorry you have to do this kind of tomfoolery, wait till I find some better way. This is all because we don't
-// know lambda types. and lambdas are part of type signature.
-using ClientFuture = decltype(make_client(
-    std::declval<rio::context &>(), std::declval<rio::Tcp_socket>(), std::declval<rio::address>()));
+// know lambda types (we just can't) and lambdas are part of type signature.
+using ClientFuture = decltype(make_client(std::declval<rio::context &>(), std::declval<rio::Tcp_socket>(), std::declval<rio::address>()));
 
 int main()
 {

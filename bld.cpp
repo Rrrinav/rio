@@ -272,26 +272,6 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    if (bld_cfg["run"]) {
-        std::string cmd = (cfg.dir_bin / cfg.exe_name).string();
-        if (!fs::exists(cmd)) {
-            bld::log(bld::Log_type::ERR, "Executable not found. Build first.");
-            return 1;
-        }
-        return std::system(cmd.c_str());
-    }
-
-    if (bld_cfg["build-examples"])
-        return build_examples(cfg, "./examples/");
-
-    if (bld_cfg["compile"]) {
-        if (!bld_cfg["o"]) {
-            bld::log(bld::Log_type::ERR, "You must provide output file using '-o' flag.");
-            return 1;
-        }
-        return build_file(bld_cfg["compile"], bld_cfg["o"], cfg) ? 0 : 1;
-    }
-
     // --- SETUP ---
     fs::create_directories(cfg.dir_pcm);
     fs::create_directories(cfg.dir_obj);
@@ -411,9 +391,28 @@ int main(int argc, char *argv[])
     if (graph.build_parallel("all", 7)) {
         bld::log(bld::Log_type::INFO, "Build Successful.");
         emit_json(json_entries);
-        return 0;
     } else {
         bld::log(bld::Log_type::ERR, "Build Failed.");
         return 1;
+    }
+
+    if (bld_cfg["run"]) {
+        std::string cmd = (cfg.dir_bin / cfg.exe_name).string();
+        if (!fs::exists(cmd)) {
+            bld::log(bld::Log_type::ERR, "Executable not found. Build first.");
+            return 1;
+        }
+        return std::system(cmd.c_str());
+    }
+
+    if (bld_cfg["build-examples"])
+        return build_examples(cfg, "./examples/");
+
+    if (bld_cfg["compile"]) {
+        if (!bld_cfg["o"]) {
+            bld::log(bld::Log_type::ERR, "You must provide output file using '-o' flag.");
+            return 1;
+        }
+        return build_file(bld_cfg["compile"], bld_cfg["o"], cfg) ? 0 : 1;
     }
 }

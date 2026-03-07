@@ -17,35 +17,33 @@ rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket sock, rio:
 {
     auto session = std::make_shared<Session>(ctx, std::move(sock), addr);
 
-    return rio::fut::loop(
-        session,
-        [](std::shared_ptr<Session> sess) {
-            return rio::fut::buff::read_till(sess->reader, '\n')
-            .then([sess](std::optional<std::string> msg) {
-                if (!msg) {
-                    std::println(" [RIO]: {} disconnected.", sess->addr);
-                    sess->write_buf.clear();
-                } else {
-                    while (!msg->empty() && (msg->back() == '\r' || msg->back() == '\n')) {
-                        msg->pop_back();
-                    }
-
-                    std::println(" [RIO]: {} sent: \"{}\"", sess->addr, rio::util::escape_string(*msg));
-
-                    sess->write_buf = std::move(*msg);
-                    sess->write_buf += "\r\n";
+    return rio::fut::loop(session, [](std::shared_ptr<Session> sess) {
+        return rio::fut::buff::read_till(sess->reader, '\n')
+        .then([sess](std::optional<std::string> msg) {
+            if (!msg) {
+                std::println(" [RIO]: {} disconnected.", sess->addr);
+                sess->write_buf.clear();
+            } else {
+                while (!msg->empty() && (msg->back() == '\r' || msg->back() == '\n')) {
+                    msg->pop_back();
                 }
 
-                return rio::fut::write_all(sess->ctx, sess->sock, sess->write_buf);
-            })
-            .then([sess]() -> rio::fut::ready_t<std::shared_ptr<Session>> {
-                if (sess->write_buf.empty()) {
-                    return rio::fut::error<std::shared_ptr<Session>>(std::make_error_code(std::errc::broken_pipe));
-                }
+                std::println(" [RIO]: {} sent: \"{}\"", sess->addr, rio::util::escape_string(*msg));
 
-                return rio::fut::ready(sess);
-            });
+                sess->write_buf = std::move(*msg);
+                sess->write_buf += "\r\n";
+            }
+
+            return rio::fut::write_all(sess->ctx, sess->sock, sess->write_buf);
         })
+        .then([sess]() -> rio::fut::ready_t<std::shared_ptr<Session>> {
+            if (sess->write_buf.empty()) {
+                return rio::fut::error<std::shared_ptr<Session>>(std::make_error_code(std::errc::broken_pipe));
+            }
+
+            return rio::fut::ready(sess);
+        });
+    })
     .or_else([addr](std::error_code ec) {
         // Only log if it is an actual unexpected error, not our loop-exit signal
         if (ec != std::errc::broken_pipe && ec != std::errc::connection_aborted)

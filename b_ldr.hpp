@@ -23,21 +23,6 @@
   ==   github.com/tsoding/nob.h                            ==
 */
 
-/*
-  INFO: DEFINES:
-  01. B_LDR_IMPLEMENTATION          : Include all the implementation in the header file.
-  02. BLD_REBUILD_YOURSELF_ONCHANGE : Rebuild the build executable if the source file is newer than the executable and
-  run it. 03. BLD_HANDLE_ARGS               : Handle command-line arguments (only run and config commands). 04.
-  BLD_REBUILD_AND_ARGS          : Rebuild the executable if the source file is newer than the executable and handle
-  command-line arguments. 05. BLD_NO_COLORS                 : Disable colors in log messages. 06. BLD_USE_CONFIG :
-  Enable the configuration system in the build tool. 07. BLD_DEFAULT_CONFIG_FILE       : File to save the configuration
-  to. 08. BLD_NO_LOGGING                : No logging in the build tool. 09. BLD_VERBOSE_0                 : No output in
-  the tool.
-  10. BLD_VERBOSE_1                 : No verbose output in the tool. Only prints errors. No INFO or WARNING messages.
-  11. BLD_VERBOSE_2                 : Only prints errors and warning. No INFO messages.
-    Verbosity is full by default.
-*/
-
 #pragma once
 
 #include <functional>
@@ -249,9 +234,9 @@ const Fd INVALID_FD = -1;
 // Redirection configuration
 struct Redirect
 {
-    Fd stdin_fd = INVALID_FD;  // Redirect stdin from this fd
-    Fd stdout_fd = INVALID_FD; // Redirect stdout to this fd
-    Fd stderr_fd = INVALID_FD; // Redirect stderr to this fd
+    Fd stdin_fd  = INVALID_FD;  // Redirect stdin from this fd
+    Fd stdout_fd = INVALID_FD;  // Redirect stdout to this fd
+    Fd stderr_fd = INVALID_FD;  // Redirect stderr to this fd
 
     Redirect() = default;
     Redirect(Fd in, Fd out, Fd err) : stdin_fd(in), stdout_fd(out), stderr_fd(err)
@@ -858,8 +843,8 @@ std::unordered_map<std::string, std::string> get_all();
 } // namespace env
 
 namespace str {
-inline std::string trim(const std::string &str); // remove leading and trailing whitespace from a string including: ' ',
-                                                 // '\t', '\n', '\r', '\f', '\v'
+inline std::string trim(const std::string &str); // remove leading and trailing whitespace from a string including:
+                                                 // ' ', '\t', '\n', '\r', '\f', '\v'
 std::string trim_left(const std::string &str);
 std::string trim_right(const std::string &str);
 
@@ -1040,14 +1025,14 @@ void bld::internal_log(bld::Log_type type, const std::string &msg)
 #endif
 
 #ifdef BLD_NO_COLORS
-    static constexpr const char *COLOUR_INFO = "";
-    static constexpr const char *COLOUR_WARN = "";
+    static constexpr const char *COLOUR_INFO  = "";
+    static constexpr const char *COLOUR_WARN  = "";
     static constexpr const char *COLOUR_ERROR = "";
     static constexpr const char *COLOUR_DEBUG = "";
     static constexpr const char *COLOUR_RESET = "";
 #else
-    static constexpr const char *COLOUR_INFO = "\x1b[38;2;80;250;123m";   // mint green
-    static constexpr const char *COLOUR_WARN = "\x1b[38;2;255;200;87m";   // amber
+    static constexpr const char *COLOUR_INFO  = "\x1b[38;2;80;250;123m";   // mint green
+    static constexpr const char *COLOUR_WARN  = "\x1b[38;2;255;200;87m";   // amber
     static constexpr const char *COLOUR_ERROR = "\x1b[38;2;255;85;85m";   // red
     static constexpr const char *COLOUR_DEBUG = "\x1b[38;2;130;170;255m"; // light blue
     static constexpr const char *COLOUR_RESET = "\x1b[0m";
