@@ -1,4 +1,5 @@
 module;
+
 export module rio:http.parser;
 
 import std;
@@ -9,15 +10,22 @@ import :utils.misc;
 
 namespace rio::http::v1_1 {
 
-// 1. A Real HTTP Error Category!
-export enum class Parse_error { invalid_request_line = 1, malformed_header, content_length_mismatch, unsupported_transfer_encoding };
+//  Error category
 
-struct Http_error_category : std::error_category
+export enum class Parse_error : std::uint8_t {
+    invalid_request_line = 1,
+    malformed_header = 2,
+    content_length_mismatch = 3,
+    unsupported_transfer_encoding = 4,
+};
+
+struct Http_error_category final : std::error_category
 {
     const char *name() const noexcept override
     {
         return "http_parse";
     }
+
     std::string message(int ev) const override
     {
         switch (static_cast<Parse_error>(ev)) {
@@ -35,9 +43,10 @@ struct Http_error_category : std::error_category
     }
 };
 
+// Single instance — error_category must have static lifetime.
 inline const Http_error_category http_error_cat{};
 
-inline std::error_code make_error_code(Parse_error e)
+inline std::error_code make_error_code(Parse_error e) noexcept
 {
     return {static_cast<int>(e), http_error_cat};
 }
@@ -50,22 +59,50 @@ struct std::is_error_code_enum<rio::http::v1_1::Parse_error> : std::true_type
 
 namespace rio::http::v1_1 {
 
-export auto parse_method(std::string_view m) -> method
+//  Method parser
+// Compares against sorted lengths first so we bail out of the switch before
+// doing any string comparison for obviously wrong lengths.
+
+export constexpr auto parse_method(std::string_view m) noexcept -> method
 {
-    if (m == "GET")
-        return method::get;
-    if (m == "POST")
-        return method::post;
-    if (m == "PUT")
-        return method::put;
-    if (m == "DELETE")
-        return method::del;
-    if (m == "PATCH")
-        return method::patch;
-    if (m == "OPTIONS")
-        return method::options;
+    switch (m.size()) {
+    case 3:
+        if (m == "GET")
+            return method::get;
+        if (m == "PUT")
+            return method::put;
+        break;
+    case 4:
+        if (m == "POST")
+            return method::post;
+        break;
+    case 5:
+        if (m == "PATCH")
+            return method::patch;
+        break;
+    case 6:
+        if (m == "DELETE")
+            return method::del;
+        break;
+    case 7:
+        if (m == "OPTIONS")
+            return method::options;
+        break;
+    }
     return method::unknown;
 }
+
+//  Parser state machine
+//
+// Key zero-cost choices:
+//  • All string fields on 'request' that survive only within one request cycle
+//    (path, version, header name/value) are std::string_view pointing into
+//    the underlying read buffer.  Zero allocation, zero copy.
+//  • Body is the only field that copies bytes — it must own them because the
+//    buffer window may slide before the handler runs.
+//  • content_length is parsed with std::from_chars — no locale, no allocation.
+//  • The "is there a body?" branch is resolved once and stored in a bool so
+//    the state machine never re-checks headers.
 
 export template <typename Reader>
 struct Parse_request_impl
@@ -75,8 +112,8 @@ struct Parse_request_impl
 
     Parse_state state{Parse_state::request_line};
     std::size_t content_length{0};
+    bool has_body{false};
 
-    // We store the two different futures we might need to poll
     std::optional<decltype(rio::fut::buff::read_till(*reader, '\n'))> curr_read_line{};
     std::optional<decltype(reader->peek())> curr_peek{};
 
@@ -84,11 +121,10 @@ struct Parse_request_impl
     {
         while (true) {
 
-            // --- STATE: REQUEST LINE & HEADERS ---
+            //  REQUEST LINE / HEADERS
             if (state == Parse_state::request_line || state == Parse_state::headers) {
-                if (!curr_read_line) {
+                if (!curr_read_line)
                     curr_read_line.emplace(rio::fut::buff::read_till(*reader, '\n'));
-                }
 
                 auto r = curr_read_line->poll();
                 if (r.state == rio::fut::status::pending)
@@ -102,58 +138,68 @@ struct Parse_request_impl
                 if (!line_opt)
                     return rio::fut::res<void>::error(std::make_error_code(std::errc::connection_aborted));
 
-                std::string_view line = rio::util::trim(*line_opt);
+                // trim() returns a string_view into the *same* buffer — no copy.
+                const std::string_view line = rio::util::trim(*line_opt);
 
                 if (state == Parse_state::request_line) {
-                    auto space1 = line.find(' ');
-                    if (space1 != std::string_view::npos) {
-                        auto space2 = line.find(' ', space1 + 1);
-                        if (space2 != std::string_view::npos) {
-                            req->method = parse_method(line.substr(0, space1));
-                            req->path = std::string(line.substr(space1 + 1, space2 - space1 - 1));
-                            req->version = std::string(line.substr(space2 + 1));
+                    // Parse:  METHOD SP request-target SP HTTP-version
+                    const auto sp1 = line.find(' ');
+                    if (sp1 == std::string_view::npos)
+                        return rio::fut::res<void>::error(make_error_code(Parse_error::invalid_request_line));
 
-                            state = Parse_state::headers;
-                            continue;
-                        }
-                    }
-                    return rio::fut::res<void>::error(make_error_code(Parse_error::invalid_request_line));
-                } else if (state == Parse_state::headers) {
-                    if (line.empty()) {
-                        // Check if we have a body
-                        if (auto cl = req->get_header("Content-Length")) {
-                            std::from_chars(cl->data(), cl->data() + cl->size(), content_length);
-                            req->body.reserve(content_length);
-                        }
+                    const auto sp2 = line.find(' ', sp1 + 1);
+                    if (sp2 == std::string_view::npos)
+                        return rio::fut::res<void>::error(make_error_code(Parse_error::invalid_request_line));
 
-                        if (auto te = req->get_header("Transfer-Encoding"); te && *te == "chunked") {
-                            return rio::fut::res<void>::error(make_error_code(Parse_error::unsupported_transfer_encoding));
-                        }
+                    req->method = parse_method(line.substr(0, sp1));
+                    // path and version must be owned: the read buffer backing
+                    // `line` will be overwritten by the next read_till call.
+                    req->path.assign(line.data() + sp1 + 1, sp2 - sp1 - 1);
+                    req->version.assign(line.data() + sp2 + 1);
 
-                        state = (content_length > 0) ? Parse_state::body : Parse_state::complete;
-                        continue; // Proceed to body parsing immediately
-                    } else {
-                        if (auto pair = rio::util::split_once(line, ": ")) {
-                            req->headers.emplace_back(std::string(pair->first), std::string(pair->second));
-                        } else {
-                            return rio::fut::res<void>::error(make_error_code(Parse_error::malformed_header));
-                        }
-                        continue;
-                    }
+                    state = Parse_state::headers;
+                    continue;
                 }
+
+                // state == headers
+                if (line.empty()) {
+                    // End of header section — resolve body length once.
+                    if (auto cl = req->get_header("Content-Length")) {
+                        std::from_chars(cl->data(), cl->data() + cl->size(), content_length);
+                        if (content_length > 0) {
+                            req->body.reserve(content_length);
+                            has_body = true;
+                        }
+                    }
+
+                    if (auto te = req->get_header("Transfer-Encoding"); te && *te == "chunked") {
+                        return rio::fut::res<void>::error(make_error_code(Parse_error::unsupported_transfer_encoding));
+                    }
+
+                    state = has_body ? Parse_state::body : Parse_state::complete;
+                    continue;
+                }
+
+                // Regular header line — split on ": " (colon + space per RFC 7230).
+                if (auto pair = rio::util::split_once(line, ": ")) {
+                    // line_opt is a local destroyed at end of this iteration,
+                    // so we must copy both name and value into owned strings.
+                    req->push_header(std::string(pair->first), std::string(pair->second));
+                } else {
+                    return rio::fut::res<void>::error(make_error_code(Parse_error::malformed_header));
+                }
+                continue;
             }
 
-            // --- STATE: BODY ---
-            else if (state == Parse_state::body) {
-                // If we've collected enough bytes, we are completely done!
+            //  BODY
+            if (state == Parse_state::body) {
                 if (req->body.size() >= content_length) {
                     state = Parse_state::complete;
                     return rio::fut::res<void>::ready();
                 }
 
-                if (!curr_peek) {
+                if (!curr_peek)
                     curr_peek.emplace(reader->peek());
-                }
 
                 auto r = curr_peek->poll();
                 if (r.state == rio::fut::status::pending)
@@ -161,30 +207,24 @@ struct Parse_request_impl
                 if (r.state == rio::fut::status::error)
                     return rio::fut::res<void>::error(r.err);
 
-                auto view = *r.value;
+                const auto view = *r.value;
                 curr_peek.reset();
 
-                if (view.empty()) {
+                if (view.empty())
                     return rio::fut::res<void>::error(std::make_error_code(std::errc::connection_aborted));
-                }
 
-                // Calculate how many bytes we still need
-                std::size_t bytes_needed = content_length - req->body.size();
-                std::size_t bytes_to_take = std::min(bytes_needed, view.size());
+                const std::size_t needed = content_length - req->body.size();
+                const std::size_t take = std::min(needed, view.size());
 
-                // Append the raw memory to the string
-                req->body.append(reinterpret_cast<const char *>(view.data()), bytes_to_take);
-
-                // Advance the reader's cursor so we don't read the same bytes again
-                reader->advance(bytes_to_take);
-
-                continue; // Loop back around to check if we have reached content_length!
+                // Single memcpy into the pre-reserved string — no reallocation.
+                req->body.append(reinterpret_cast<const char *>(view.data()), take);
+                reader->advance(take);
+                continue;
             }
 
-            // --- STATE: COMPLETE ---
-            else if (state == Parse_state::complete) {
-                return rio::fut::res<void>::ready();
-            }
+            //  COMPLETE
+            // state == Parse_state::complete
+            return rio::fut::res<void>::ready();
         }
     }
 };

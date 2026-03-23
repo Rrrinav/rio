@@ -83,32 +83,3 @@ int main()
     std::println("Server shut down.");
     return 0;
 }
-
-//int main()
-//{
-//    rio::context IO{256};
-//
-//    rio::Runtime rt{&IO};
-//
-//    auto listen_res = rio::Tcp_socket::open_and_listen("0.0.0.0", 6969, rio::s_opt::async_server_v4);
-//    if (!listen_res) {
-//        std::println("Failed to open server: {}", listen_res.error().message());
-//        return 1;
-//    }
-//
-//    auto [listener, server_addr] = std::move(*listen_res);
-//    std::println("Async Echo Server running on {}...", server_addr);
-//
-//    auto server_loop = rio::fut::accept_all(IO, listener, [&rt](rio::Tcp_socket client, rio::address addr) {
-//        std::println(" [RIO]: New Client Connected: {}", addr);
-//        rt.spawn(handle_client(rt.ctx(), std::move(client), addr));
-//    });
-//
-//    auto result = rt.block_on(std::move(server_loop));
-//
-//    if (!result) {
-//        std::println("Server crashed: {}", result.error().message());
-//    }
-//
-//    return 0;
-//}

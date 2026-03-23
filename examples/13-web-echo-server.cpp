@@ -23,7 +23,7 @@ rio::fut::Task<void> handle_http_client(rio::context &ctx, rio::Tcp_socket sock,
     return parse_request(sess->reader, sess->req)
         .then([sess, router]() {
             std::println(
-                "[{:%H:%M:%S}] {}:{} -> {} {} ({} bytes)",
+                " [RIO]: [{:%H:%M:%S}] {}:{} -> {} {} ({} bytes)",
                 std::chrono::system_clock::now(),
                 sess->addr.to_string(),
                 sess->addr.port(),
@@ -40,7 +40,7 @@ rio::fut::Task<void> handle_http_client(rio::context &ctx, rio::Tcp_socket sock,
         })
         .or_else([](std::error_code ec) {
             if (ec != std::errc::connection_aborted && ec != std::errc::broken_pipe) {
-                std::println(" [!] Connection Error: {}", ec.message());
+                std::println(" [RIO: ERR] Connection Error: {}", ec.message());
             }
             return rio::fut::ready();
         });
@@ -70,7 +70,10 @@ int main()
         try {
             auto json = rio::jsn::parse(req.body);
             msg = rio::jsn::view(json)["message"].template as_or<std::string>("err");
-        } catch (...) {}
+        } catch (std::exception e) {
+            std::println(std::cerr, "{}", e.what());
+            std::abort();
+        }
 
         rio::jsn::Context ctx;
         ctx.obj_b().obj_k("echo").inject(msg).obj_e();
@@ -82,7 +85,7 @@ int main()
         return 1;
 
     auto [listener, server_addr] = std::move(*listen_res);
-    std::println("RIO persistent console live: http://localhost:8080");
+    std::println(" [RIO]: Web server live at: http://localhost:8080");
 
     rt.spawn(rio::fut::accept_all(IO, listener, [&rt, router](rio::Tcp_socket client, rio::address addr) {
         rt.spawn(handle_http_client(rt.ctx(), std::move(client), addr, router));

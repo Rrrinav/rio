@@ -3,7 +3,6 @@ module;
 export module rio:http.response;
 
 import std;
-
 import :http.request;
 import :utils.json;
 
@@ -19,12 +18,12 @@ export enum class status_code : std::uint16_t {
     not_found             = 404,
     method_not_allowed    = 405,
     internal_server_error = 500,
-    not_implemented       = 501
+    not_implemented       = 501,
 };
 
-export constexpr auto reason_phrase(status_code code) -> std::string_view
+export constexpr std::string_view reason_phrase(status_code c) noexcept
 {
-    switch (code) {
+    switch (c) {
     case status_code::ok:
         return "OK";
     case status_code::created:
@@ -53,82 +52,81 @@ export constexpr auto reason_phrase(status_code code) -> std::string_view
 export struct response
 {
     status_code code{status_code::ok};
-    std::vector<header> headers{};
+    std::vector<std::pair<std::string, std::string>> headers{};
     std::string body{};
 
-    // Fluent header builder
-    auto set_header(std::string name, std::string value) -> response &
+    auto &set_header(std::string name, std::string value) &
     {
-        for (auto &h : headers) {
-            if (h.name == name) {
-                h.value = std::move(value);
+        for (auto &[n, v] : headers) {
+            if (n == name) {
+                v = std::move(value);
                 return *this;
             }
         }
-        headers.push_back({std::move(name), std::move(value)});
+        headers.emplace_back(std::move(name), std::move(value));
         return *this;
     }
 
-    // Convert the entire object into a raw HTTP wire string
-    [[nodiscard]]
-    auto to_string() const -> std::string
+    template <typename Buffer>
+    void write_to(Buffer &out) const
     {
-        std::string out;
-        // Pre-allocate a reasonable size to avoid reallocations
-        out.reserve(128 + body.size());
-
-        // 1. Status line
+        // Status line
         std::format_to(std::back_inserter(out), "HTTP/1.1 {} {}\r\n", static_cast<std::uint16_t>(code), reason_phrase(code));
 
-        // 2. Headers
+        // User headers
         bool has_content_length = false;
-        for (const auto &h : headers) {
-            std::format_to(std::back_inserter(out), "{}: {}\r\n", h.name, h.value);
-            // In a real server, you'd make this case-insensitive
-            if (h.name == "Content-Length")
+        for (const auto &[n, v] : headers) {
+            std::format_to(std::back_inserter(out), "{}: {}\r\n", n, v);
+            if (n == "Content-Length")
                 has_content_length = true;
         }
 
-        // Automatically inject Content-Length if the user forgot it
-        if (!has_content_length) {
+        // Inject Content-Length if absent
+        if (!has_content_length)
             std::format_to(std::back_inserter(out), "Content-Length: {}\r\n", body.size());
-        }
 
-        // 3. Blank line to end headers, then the body
-        out += "\r\n";
-        out += body;
+        // Header / body separator
+        out.append("\r\n", 2);
 
+        // Body
+        out.append(body.data(), body.size());
+    }
+
+    // Convenience: produces an owned wire string.
+    // Pre-allocates to avoid repeated reallocation.
+    [[nodiscard]]
+    std::string to_string() const
+    {
+        std::string out;
+        out.reserve(128 + body.size());
+        write_to(out);
         return out;
     }
 
-    // --- Static Factory Methods ---
-
-    static auto empty(status_code c = status_code::no_content) -> response
+    [[nodiscard]] static response empty(status_code c = status_code::no_content)
     {
         return response{.code = c};
     }
 
-    static auto text(std::string_view txt, status_code c = status_code::ok) -> response
+    [[nodiscard]] static response text(std::string_view txt, status_code c = status_code::ok)
     {
-        response res{.code = c, .body = std::string(txt)};
-        res.set_header("Content-Type", "text/plain");
-        return res;
+        response r{.code = c, .body = std::string(txt)};
+        r.set_header("Content-Type", "text/plain");
+        return r;
     }
 
-    // Pass a rio::jsn::Json directly. It automatically formats it!
-    static auto json(const rio::jsn::Json &j, status_code c = status_code::ok) -> response
+    [[nodiscard]] static response json(const rio::jsn::Json &j, status_code c = status_code::ok)
     {
-        response res{.code = c, .body = std::format("{}", j)};
-        res.set_header("Content-Type", "application/json");
-        return res;
+        response r{.code = c, .body = std::format("{}", j)};
+        r.set_header("Content-Type", "application/json");
+        return r;
     }
 
-    // For passing raw pre-formatted JSON strings
-    static auto json(std::string raw_json, status_code c = status_code::ok) -> response
+    [[nodiscard]] static response json(std::string raw, status_code c = status_code::ok)
     {
-        response res{.code = c, .body = std::move(raw_json)};
-        res.set_header("Content-Type", "application/json");
-        return res;
+        response r{.code = c, .body = std::move(raw)};
+        r.set_header("Content-Type", "application/json");
+        return r;
     }
 };
 

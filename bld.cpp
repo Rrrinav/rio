@@ -9,6 +9,7 @@
 #include <vector>
 
 #define B_LDR_IMPLEMENTATION
+#define BLD_NO_COLORS
 #include "b_ldr.hpp"
 
 namespace fs = std::filesystem;
