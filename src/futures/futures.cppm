@@ -147,34 +147,28 @@ struct Future
         "  Sorry"
     );
 
-    static_assert(std::invocable<Poll_fn &, State &>, 
+    static_assert(std::invocable<Poll_fn &, State &>,
         "\n"
         "  The provided State is not compatible with the Poll mechanism.\n"
         "  Ensure your state has a `poll()` method that takes NO arguments,\n"
         "  and returns a `rio::fut::res<T>`.\n"
     );
 
+    static_assert(!std::same_as<std::decay_t<State>, Future>, "State can't be future type itself");
+
     State data{};
-    Poll_fn fn = rio::fut::Call_poll{};
+    Poll_fn fn{};
 
     template <typename S>
         requires std::constructible_from<State, S> && (!std::same_as<std::decay_t<S>, Future>)
     explicit Future(S &&s) : data(std::forward<S>(s)), fn(Poll_fn{})
-    {
-        static_assert(std::invocable<Poll_fn &, State &>, "The provided State is not compatible with the default Call_poll mechanism.");
-    }
+    {}
 
     explicit Future(State &&s) : data(std::forward<State>(s)), fn(Poll_fn{})
-    {
-        static_assert(!std::same_as<std::decay_t<State>, Future>, "State can't be future type itself");
-        static_assert(std::invocable<Poll_fn &, State &>, "The provided State is not compatible with the default Call_poll mechanism.");
-    }
+    {}
 
     explicit Future() : data(State{}), fn(Poll_fn{})
-    {
-        static_assert(!std::same_as<std::decay_t<State>, Future>, "State can't be future type itself");
-        static_assert(std::invocable<Poll_fn &, State &>, "The provided State is not compatible with the default Call_poll mechanism.");
-    }
+    {}
 
     template <typename S, typename P>
     Future(S &&s, P &&p) : data(std::forward<S>(s)), fn(std::forward<P>(p))

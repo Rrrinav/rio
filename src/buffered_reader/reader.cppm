@@ -505,10 +505,12 @@ std::optional<std::string> read_till(Reader &reader, char delimiter)
     std::string result;
     while (true) {
         auto view = reader.peek();
-        if (view.empty())
-            if (result.empty())
+        if (view.empty()) {
+            if (result.empty()) {
                 return std::nullopt;
-        return result;
+            }
+            return result;
+        }
 
         const void *match = std::memchr(view.data(), delimiter, view.size());
         if (match) {

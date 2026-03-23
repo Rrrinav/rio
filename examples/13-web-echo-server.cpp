@@ -29,7 +29,8 @@ rio::fut::Task<void> handle_http_client(rio::context &ctx, rio::Tcp_socket sock,
                 sess->addr.port(),
                 rio::http::v1_1::method_to_str(sess->req.method),
                 sess->req.path,
-                sess->req.body.size());
+                sess->req.body.size()
+            );
 
             response res = router->dispatch(sess->req);
             res.set_header("Server", "rio-runtime");
@@ -69,14 +70,14 @@ int main()
         std::string msg = "empty";
         try {
             auto json = rio::jsn::parse(req.body);
-            msg = rio::jsn::view(json)["message"].template as_or<std::string>("err");
+            msg = rio::jsn::view(json)["message"].as_str_or("err");
         } catch (std::exception e) {
             std::println(std::cerr, "{}", e.what());
             std::abort();
         }
 
         rio::jsn::Context ctx;
-        ctx.obj_b().obj_k("echo").inject(msg).obj_e();
+        ctx.obj_b().obj_k("echo").inject("rio: " + msg).obj_e();
         return response::json(ctx.get());
     });
 

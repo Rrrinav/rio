@@ -225,6 +225,19 @@ export struct View
         return as<T>().value_or(fallback);
     }
 
+    auto as_str_or(std::string fallback = {}) const -> std::string
+    {
+        return as<std::string>().value_or(std::move(fallback));
+    }
+    auto as_num_or(double fallback = 0.0) const -> double
+    {
+        return as<double>().value_or(fallback);
+    }
+    auto as_bool_or(bool fallback = false) const -> bool
+    {
+        return as<bool>().value_or(fallback);
+    }
+
     template <typename T>
     auto get() const -> T
     {

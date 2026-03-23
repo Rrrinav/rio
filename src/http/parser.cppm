@@ -13,9 +13,9 @@ namespace rio::http::v1_1 {
 //  Error category
 
 export enum class Parse_error : std::uint8_t {
-    invalid_request_line = 1,
-    malformed_header = 2,
-    content_length_mismatch = 3,
+    invalid_request_line          = 1,
+    malformed_header              = 2,
+    content_length_mismatch       = 3,
     unsupported_transfer_encoding = 4,
 };
 
@@ -93,17 +93,6 @@ export constexpr auto parse_method(std::string_view m) noexcept -> method
 }
 
 //  Parser state machine
-//
-// Key zero-cost choices:
-//  • All string fields on 'request' that survive only within one request cycle
-//    (path, version, header name/value) are std::string_view pointing into
-//    the underlying read buffer.  Zero allocation, zero copy.
-//  • Body is the only field that copies bytes — it must own them because the
-//    buffer window may slide before the handler runs.
-//  • content_length is parsed with std::from_chars — no locale, no allocation.
-//  • The "is there a body?" branch is resolved once and stored in a bool so
-//    the state machine never re-checks headers.
-
 export template <typename Reader>
 struct Parse_request_impl
 {
