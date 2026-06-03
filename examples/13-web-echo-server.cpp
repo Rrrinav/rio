@@ -50,10 +50,12 @@ rio::fut::Task<void> handle_http_client(rio::context &ctx, rio::Tcp_socket sock,
 int main()
 {
     auto html_res = rio::io::read_file("assets/echoser.html");
+
     if (!html_res) {
         std::println("Error: Could not load index.html: {}", html_res.error().message());
         return 1;
     }
+
     std::string index_html = std::move(*html_res);
 
     rio::context IO{512};

@@ -100,8 +100,7 @@ auto main() -> int
         addr = r->address;
 
         std::println("New Client Connected: {}", addr);
-        return rio::fut::res<ClientContext>::ready(
-            { .sock = std::move(r->client), .addr = addr });
+        return rio::fut::res<ClientContext>::ready({ .sock = std::move(r->client), .addr = addr });
     }};
 
     while (true) {

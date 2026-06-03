@@ -14,86 +14,90 @@ import :fut.io;
 
 namespace rio::fut {
 
-struct Open_req
+using Open_req = Basic_op<rio::file, std::string>;
+
+struct Open_req_impl : Open_req
 {
-    rio::internals::uring_request_header header;
-    Async_state<rio::file> *state;
-    std::string path;
+    using Open_req::Open_req;
+
+    static void finish(Open_req_impl *self, std::error_code ec)
+    {
+        self->state.reject(ec);
+        self->io_done = true;
+        if (self->future_dropped)
+            self->ctx->recycle(self);
+    }
+
+    static void finish(Open_req_impl *self, rio::file f)
+    {
+        self->state.resolve(std::move(f));
+        self->io_done = true;
+        if (self->future_dropped)
+            self->ctx->recycle(self);
+    }
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
-        auto *self = reinterpret_cast<Open_req *>(ptr);
-        rio::Promise<Async_state<rio::file>> p{.state = self->state};
-
+        auto *self = reinterpret_cast<Open_req_impl *>(ptr);
         if (res < 0)
-            p.reject(std::error_code(-res, std::system_category()));
+            finish(self, std::error_code(-res, std::system_category()));
         else
-            p.resolve(rio::file::attach(res));
-
-        self->state->io_done = true;
-        if (self->state->future_dropped)
-            delete self->state;
-        delete self;
+            finish(self, rio::file::attach(res));
     }
 };
 
-struct Sync_req
+using Sync_req = Basic_op<void>;
+
+struct Sync_req_impl : Sync_req
 {
-    rio::internals::uring_request_header header;
-    Async_state<void> *state;
+    using Sync_req::Sync_req;
+
+    static void finish(Sync_req_impl *self, std::error_code ec)
+    {
+        self->state.reject(ec);
+        self->io_done = true;
+        if (self->future_dropped)
+            self->ctx->recycle(self);
+    }
+
+    static void finish(Sync_req_impl *self)
+    {
+        self->state.resolve();
+        self->io_done = true;
+        if (self->future_dropped)
+            self->ctx->recycle(self);
+    }
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
-        auto *self = reinterpret_cast<Sync_req *>(ptr);
-        rio::Promise<Async_state<void>> p{.state = self->state};
-
+        auto *self = reinterpret_cast<Sync_req_impl *>(ptr);
         if (res < 0)
-            p.reject(std::error_code(-res, std::system_category()));
+            finish(self, std::error_code(-res, std::system_category()));
         else
-            p.resolve();
-
-        self->state->io_done = true;
-        if (self->state->future_dropped)
-            delete self->state;
-        delete self;
+            finish(self);
     }
 };
 
 export auto open_file(rio::context &ctx, std::string_view path, rio::f_mode flags, mode_t mode = 0644)
 {
-    auto *s = new Async_state<rio::file>();
-
-    auto *req = new Open_req{
-        .header = {.call = &Open_req::on_complete},
-        .state = s,
-        .path = std::string(path)
-    };
+    auto *req = ctx.make_pooled<Open_req_impl>(ctx, std::string(path));
+    req->header.call = &Open_req_impl::on_complete;
 
     auto *sqe = ctx.sqe();
-
-    s->req_ptr = &req->header;
-
-    io_uring_prep_openat(sqe, AT_FDCWD, req->path.c_str(), static_cast<int>(flags), mode);
+    io_uring_prep_openat(sqe, AT_FDCWD, req->payload.c_str(), static_cast<int>(flags), mode);
     io_uring_sqe_set_data(sqe, &req->header);
-
-    ctx.submit();
-    return rio::Future(Async_handle{s, &ctx}, rio::fut::Call_poll{});
+    return rio::Future(Async_handle<Open_req_impl>{req}, rio::fut::Call_poll{});
 }
 
 export auto sync(rio::context &ctx, rio::file &f)
 {
-    auto *s = new Async_state<void>();
-    auto *req = new Sync_req{.header = {.call = &Sync_req::on_complete}, .state = s};
+    auto *req = ctx.make_pooled<Sync_req_impl>(ctx);
+    req->header.call = &Sync_req_impl::on_complete;
 
     auto *sqe = ctx.sqe();
-
-    s->req_ptr = req;
-
     io_uring_prep_fsync(sqe, f.fd.native_handle(), 0);
     io_uring_sqe_set_data(sqe, &req->header);
-
-    ctx.submit();
-    return rio::Future(Async_handle{s, &ctx}, rio::fut::Call_poll{});
+    return rio::Future(Async_handle<Sync_req_impl>{req}, rio::fut::Call_poll{});
 }
 
 export auto read_at(rio::context &ctx, rio::file &f, std::span<char> buf, size_t offset)

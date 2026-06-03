@@ -20,7 +20,6 @@ int main()
     // Also convertible to bool, returns fd < 0.
 
     // **** Destructor has if (fd < 0) check so, it will close only if fd is valid. Tough choice but I like this more.
-    // *****
 
     /*
         There are three functions defined for handles in rio.

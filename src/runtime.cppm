@@ -64,8 +64,10 @@ public:
 
             // THE FIX: Do not sleep if we have pending spawns waiting to be processed!
             if (task_progress || active_tasks_.empty() || !pending_spawns_.empty()) {
+                ctx_->flush();
                 ctx_->try_poll();
             } else {
+                ctx_->flush();
                 ctx_->poll();
             }
 
@@ -117,10 +119,11 @@ public:
                 }
             }
 
-            // THE FIX: Also applied here to block_on
             if (task_progress || active_tasks_.empty() || !pending_spawns_.empty()) {
+                ctx_->flush();
                 ctx_->try_poll();
             } else {
+                ctx_->flush();
                 ctx_->poll();
             }
 
