@@ -46,7 +46,14 @@ export struct context
         void (*destroy)(void *);
     };
 
+    struct cancel_entry
+    {
+        std::chrono::steady_clock::time_point deadline;
+        void *target;
+    };
+
     std::vector<tombstone> graveyard;
+    std::vector<cancel_entry> cancellations_;
     std::array<pool_bucket, bucket_sizes.size()> op_buckets_{};
     bool has_pending_submit_ = false;
     unsigned queued_sqes_ = 0;
@@ -113,6 +120,53 @@ export struct context
         this->submit();
     }
 
+    void schedule_cancel(std::chrono::steady_clock::time_point deadline, void *target)
+    {
+        auto it = std::ranges::upper_bound(cancellations_, deadline, std::ranges::less{}, &cancel_entry::deadline);
+        cancellations_.insert(it, cancel_entry{deadline, target});
+    }
+
+    void remove_pending_cancellations(void *target)
+    {
+        std::erase_if(cancellations_, [target](const cancel_entry &e) { return e.target == target; });
+    }
+
+    void fire_due_cancellations()
+    {
+        if (cancellations_.empty()) {
+            return;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+
+        const auto due = std::ranges::partition_point(cancellations_, [now](const cancel_entry &e) { return e.deadline <= now; });
+        if (due == cancellations_.begin()) {
+            return;
+        }
+
+        std::size_t submitted = 0;
+        for (auto it = cancellations_.begin(); it != due; ++it, ++submitted) {
+            auto sqe = this->sqe();
+            if (!sqe) {
+                break;
+            }
+
+            io_uring_prep_cancel(sqe, it->target, 0);
+            io_uring_sqe_set_data(sqe, nullptr);
+        }
+
+        cancellations_.erase(cancellations_.begin(), cancellations_.begin() + submitted);
+    }
+
+    [[nodiscard]]
+    auto next_deadline() const -> std::optional<std::chrono::steady_clock::time_point>
+    {
+        if (cancellations_.empty()) {
+            return std::nullopt;
+        }
+        return cancellations_.front().deadline;
+    }
+
     [[nodiscard]]
     auto sqe() -> io_uring_sqe *
     {
@@ -148,11 +202,21 @@ export struct context
     void poll()
     {
         flush();
+        fire_due_cancellations();
+        flush();
 
         io_uring_cqe *cqe;
 
-        // If no completions, return
-        if (io_uring_wait_cqe(&ring, &cqe) < 0) {
+        // If no completions, wait (up to the next deadline, if any)
+        if (auto deadline = next_deadline()) {
+            __kernel_timespec ts{};
+            auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(*deadline - std::chrono::steady_clock::now());
+            if (dur.count() > 0) {
+                ts.tv_sec = dur.count() / 1'000'000'000;
+                ts.tv_nsec = dur.count() % 1'000'000'000;
+            }
+            io_uring_wait_cqe_timeout(&ring, &cqe, &ts);
+        } else if (io_uring_wait_cqe(&ring, &cqe) < 0) {
             return;
         }
 
@@ -178,10 +242,17 @@ export struct context
             if (ptr) {
                 auto *req = static_cast<internals::uring_request_header *>(ptr);
                 req->call(req, cqe->res);
+
+                // The op will never complete again; drop any pending deadline
+                // cancels targeting it so we never cancel recycled memory.
+                remove_pending_cancellations(ptr);
             }
         }
 
         io_uring_cq_advance(&ring, count);
+
+        fire_due_cancellations();
+        flush();
     }
 
     auto run(bool &quit)

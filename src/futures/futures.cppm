@@ -72,10 +72,36 @@ export struct poll_t
         return tag_invoke(*this, std::forward<T>(t));
     }
 };
+
+export struct cancel_after_t
+{
+    template <typename T>
+        requires requires(T &t, std::chrono::steady_clock::time_point d) { tag_invoke(std::declval<const cancel_after_t &>(), t, d); }
+    constexpr void operator()(T &t, std::chrono::steady_clock::time_point d) const
+    {
+        return tag_invoke(*this, t, d);
+    }
+};
+
+export struct cancel_t
+{
+    template <typename T>
+        requires requires(T &t) { tag_invoke(std::declval<const cancel_t &>(), t); }
+    constexpr void operator()(T &t) const
+    {
+        return tag_invoke(*this, t);
+    }
+};
 } // namespace tag_invoke_impl
 
 using tag_invoke_impl::poll_t;
 export inline constexpr poll_t poll{};
+
+using tag_invoke_impl::cancel_after_t;
+export inline constexpr cancel_after_t cancel_after{};
+
+using tag_invoke_impl::cancel_t;
+export inline constexpr cancel_t cancel{};
 
 template <typename T>
 struct is_poll_res : std::false_type
@@ -195,6 +221,18 @@ struct Future
         return f.poll();
     }
 
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Future &f)
+    {
+        if constexpr (requires { rio::cancel(f.data); })
+            rio::cancel(f.data);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Future &f, std::chrono::steady_clock::time_point d)
+    {
+        if constexpr (requires { rio::cancel_after(f.data, d); })
+            rio::cancel_after(f.data, d);
+    }
+
     template <typename Fn>
     auto then(Fn &&fn) &&;
 
@@ -282,6 +320,14 @@ struct Then_impl
     {
         return t.poll();
     }
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Then_impl &t, std::chrono::steady_clock::time_point d)
+    {
+        rio::cancel_after(t.first_fut.data, d);
+    }
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Then_impl &t)
+    {
+        rio::cancel(t.first_fut.data);
+    }
 };
 export template <Pollable Fut, typename Fn>
 Then_impl(Fut, Fn) -> Then_impl<Fut, Fn>;
@@ -338,6 +384,14 @@ struct Map_impl
     friend auto tag_invoke(poll_t, Map_impl &m)
     {
         return m.poll();
+    }
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Map_impl &m, std::chrono::steady_clock::time_point d)
+    {
+        rio::cancel_after(m.fut.data, d);
+    }
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Map_impl &m)
+    {
+        rio::cancel(m.fut.data);
     }
 };
 export template <Pollable Fut, typename Fn>
@@ -410,6 +464,14 @@ struct Or_else_impl
     {
         return o.poll();
     }
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Or_else_impl &o, std::chrono::steady_clock::time_point d)
+    {
+        rio::cancel_after(o.first_fut.data, d);
+    }
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Or_else_impl &o)
+    {
+        rio::cancel(o.first_fut.data);
+    }
 };
 export template <Pollable Fut, typename Fn>
 Or_else_impl(Fut, Fn) -> Or_else_impl<Fut, Fn>;
@@ -473,9 +535,15 @@ struct Timeout_impl
     Fut fut;
     std::chrono::steady_clock::time_point deadline;
     bool timed_out = false;
+    bool kernel_cancelled = false;
 
     Timeout_impl(Fut f, std::chrono::steady_clock::time_point t) : fut(std::move(f)), deadline(t)
-    {}
+    {
+        // If the inner state supports cancellation, arm a real kernel-side
+        // cancel at the deadline instead of relying on clock checks in poll().
+        if constexpr (requires { rio::cancel_after(fut.data, deadline); })
+            rio::cancel_after(fut.data, deadline);
+    }
     Timeout_impl(Timeout_impl &&) noexcept = default;
     Timeout_impl &operator=(Timeout_impl &&) noexcept = default;
 
@@ -484,8 +552,17 @@ struct Timeout_impl
         if (timed_out)
             return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));
         auto r = rio::poll(fut);
-        if (r.state != fut::status::pending)
+        if (r.state == fut::status::ready)
             return r;
+        if (r.state == fut::status::error) {
+            if (kernel_cancelled && r.err == std::errc::operation_canceled) {
+                timed_out = true;
+                return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));
+            }
+            return r;
+        }
+        if (kernel_cancelled)
+            return fut::res<value_type>::pending();
         if (std::chrono::steady_clock::now() >= deadline) {
             timed_out = true;
             return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));

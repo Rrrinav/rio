@@ -14,7 +14,7 @@ struct Server
 };
 
 // You can accept session* insetad of void*, this is made sure by templates
-// You just have to send same thing to accepti function and receive same thing in callback.
+// You just have to send same thing to accept function and receive same thing in callback.
 void read_callback  (rio::context &ctx, rio::result<std::size_t> res, Session *s);
 void write_callback (rio::context &ctx, rio::result<std::size_t> res, Session *s);
 void accept_callback(rio::context &ctx, rio::result<rio::as::accept_result> res, Server *srv);

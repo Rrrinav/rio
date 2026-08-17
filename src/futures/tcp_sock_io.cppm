@@ -1,5 +1,6 @@
 module;
 
+#include <cerrno>
 #include <liburing.h>
 #include <sys/socket.h>
 
@@ -45,7 +46,9 @@ struct Accept_req_impl : Accept_req
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Accept_req_impl *>(ptr);
-        if (res < 0) {
+        if (res == -ECANCELED) {
+            finish(self, std::make_error_code(std::errc::operation_canceled));
+        } else if (res < 0) {
             finish(self, std::error_code(-res, std::system_category()));
         } else {
             self->payload.client_addr.len = self->payload.addr_len;
@@ -79,7 +82,9 @@ struct Connect_req_impl : Connect_req
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Connect_req_impl *>(ptr);
-        if (res < 0)
+        if (res == -ECANCELED)
+            finish(self, std::make_error_code(std::errc::operation_canceled));
+        else if (res < 0)
             finish(self, std::error_code(-res, std::system_category()));
         else
             finish(self);

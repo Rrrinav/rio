@@ -6,6 +6,21 @@ An async runtime based on liburing.
 Doesn't use raw io_uring, I am using linux liburing abstraction layer/library.
 Single Threaded only.
 
+## Benchmarks
+
+```txt
+clients             : 32
+warmup/client       : 200
+measured/client     : 2000
+payload bytes       : 256
+io_uring entries    : 2048
+total round-trips   : 64000
+wall time           : 443.032 ms
+throughput          : 144459 round-trips/s
+wire throughput     : 70.54 MiB/s
+avg observed rtt    : 198.71 us
+```
+
 **Read requirments.**
 
 ## Building

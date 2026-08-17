@@ -28,7 +28,7 @@ rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket sock, rio:
                     msg->pop_back();
                 }
 
-                std::println(" [RIO]: {} sent: \"{}\"", sess->addr, rio::util::escape_string(*msg));
+                // std::println(" [RIO]: {} sent: \"{}\"", sess->addr, rio::util::escape_string(*msg));
 
                 sess->write_buf = std::move(*msg);
                 sess->write_buf += "\r\n";

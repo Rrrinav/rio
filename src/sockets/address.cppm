@@ -11,6 +11,8 @@ import std;
 
 namespace rio {
 
+using namespace std::string_view_literals;
+
 export struct address
 {
     union storage_t {
@@ -37,7 +39,7 @@ export struct address
         addr.len = sizeof(sockaddr_in);
 
         std::string given_ip(ip);
-        std::string ip_str = (given_ip == "localhost") ? "127.0.0.1" : given_ip;
+        std::string ip_str = (given_ip == "localhost"sv) ? "127.0.0.1" : given_ip;
 
         if (::inet_pton(AF_INET, ip_str.c_str(), &addr.storage.v4.sin_addr) != 1) [[unlikely]]
             return std::unexpected(Err{EINVAL, std::format("Invalid IPv4 address: '{}'", ip)});
@@ -110,7 +112,6 @@ export struct address
     }
 
     // --- Auto-detect IP version ---
-
     [[nodiscard]]
     static auto from_ip(const char *ip, uint16_t port) -> result<address>
     {

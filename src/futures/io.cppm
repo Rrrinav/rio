@@ -1,5 +1,6 @@
 module;
 
+#include <cerrno>
 #include <liburing.h>
 #include <sys/socket.h>
 
@@ -124,6 +125,30 @@ struct Async_handle
     {
         return ptr->poll();
     }
+
+    void cancel()
+    {
+        if (!ptr || ptr->io_done)
+            return;
+        ptr->ctx->cancel_request(&ptr->header);
+    }
+
+    void cancel_after(std::chrono::steady_clock::time_point deadline)
+    {
+        if (!ptr || ptr->io_done)
+            return;
+        ptr->ctx->schedule_cancel(deadline, &ptr->header);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Async_handle &h, std::chrono::steady_clock::time_point d)
+    {
+        h.cancel_after(d);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Async_handle &h)
+    {
+        h.cancel();
+    }
 };
 
 template <typename Op>
@@ -145,7 +170,9 @@ struct Counted_op : Basic_op<T>
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Counted_op *>(ptr);
-        if (res < 0)
+        if (res == -ECANCELED)
+            op_detail::finish_error(self, std::make_error_code(std::errc::operation_canceled));
+        else if (res < 0)
             op_detail::finish_error(self, std::error_code(-res, std::system_category()));
         else
             op_detail::finish_success(self, static_cast<T>(res));
