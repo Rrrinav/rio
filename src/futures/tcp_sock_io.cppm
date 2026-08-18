@@ -114,6 +114,20 @@ export auto connect(rio::context &ctx, rio::Tcp_socket &client, const rio::addre
     return rio::Future(Async_handle<Connect_req_impl>{req}, rio::fut::Call_poll{});
 }
 
+export auto shutdown(rio::context &ctx, rio::Tcp_socket &sock, rio::Tcp_socket::shut how)
+{
+    return rio::fut::shutdown(ctx, sock.fd.native_handle(), static_cast<int>(how));
+}
+
+// Takes the socket by value and detaches its fd immediately: the kernel
+// owns the close from here on, so the RAII destructor cannot double-close
+// (which would be dangerous after the fd number gets reused).
+export auto close(rio::context &ctx, Handle_like_c auto sock)
+{
+    int fd = sock.fd.detatch();
+    return rio::fut::close(ctx, fd);
+}
+
 export template <typename Handler>
 struct Accept_many_impl
 {

@@ -27,6 +27,7 @@ struct Basic_op
     rio::promise::State<T> state{};
     bool io_done = false;
     bool future_dropped = false;
+    bool cancel_on_drop = true;
     Payload payload{};
 
     explicit Basic_op(rio::context &c) : ctx(&c)
@@ -98,7 +99,7 @@ struct Async_handle
                     ptr->ctx->recycle(ptr);
                 else {
                     ptr->future_dropped = true;
-                    if (ptr->ctx)
+                    if (ptr->ctx && ptr->cancel_on_drop)
                         ptr->ctx->cancel_request(&ptr->header);
                 }
             }
@@ -116,7 +117,7 @@ struct Async_handle
             ptr->ctx->recycle(ptr);
         } else {
             ptr->future_dropped = true;
-            if (ptr->ctx)
+            if (ptr->ctx && ptr->cancel_on_drop)
                 ptr->ctx->cancel_request(&ptr->header);
         }
     }
@@ -203,6 +204,71 @@ export auto write(rio::context &ctx, int fd, std::span<const char> buf, size_t o
     return make_async_future(op);
 }
 
+struct Shutdown_payload
+{
+    int how{};
+};
+
+using Shutdown_op = Basic_op<void, Shutdown_payload>;
+
+struct Shutdown_op_impl : Shutdown_op
+{
+    using Shutdown_op::Shutdown_op;
+
+    static void on_complete(rio::internals::uring_request_header *ptr, int res)
+    {
+        auto *self = reinterpret_cast<Shutdown_op_impl *>(ptr);
+        if (res == -ECANCELED)
+            op_detail::finish_error(self, std::make_error_code(std::errc::operation_canceled));
+        else if (res < 0)
+            op_detail::finish_error(self, std::error_code(-res, std::system_category()));
+        else
+            op_detail::finish_success(self);
+    }
+};
+
+export auto shutdown(rio::context &ctx, int fd, int how)
+{
+    auto *op = ctx.make_pooled<Shutdown_op_impl>(ctx);
+    op->header.call = &Shutdown_op_impl::on_complete;
+    op->cancel_on_drop = false;
+
+    auto *sqe = ctx.sqe();
+    io_uring_prep_shutdown(sqe, fd, how);
+    io_uring_sqe_set_data(sqe, &op->header);
+    return make_async_future(op);
+}
+
+using Close_op = Basic_op<void>;
+
+struct Close_op_impl : Close_op
+{
+    using Close_op::Close_op;
+
+    static void on_complete(rio::internals::uring_request_header *ptr, int res)
+    {
+        auto *self = reinterpret_cast<Close_op_impl *>(ptr);
+        if (res == -ECANCELED)
+            op_detail::finish_error(self, std::make_error_code(std::errc::operation_canceled));
+        else if (res < 0)
+            op_detail::finish_error(self, std::error_code(-res, std::system_category()));
+        else
+            op_detail::finish_success(self);
+    }
+};
+
+export auto close(rio::context &ctx, int fd)
+{
+    auto *op = ctx.make_pooled<Close_op_impl>(ctx);
+    op->header.call = &Close_op_impl::on_complete;
+    op->cancel_on_drop = false;
+
+    auto *sqe = ctx.sqe();
+    io_uring_prep_close(sqe, fd);
+    io_uring_sqe_set_data(sqe, &op->header);
+    return make_async_future(op);
+}
+
 struct Timer_payload
 {
     __kernel_timespec ts{};
@@ -285,6 +351,18 @@ export struct Write_all_impl
             curr_write.reset();
         }
     }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Write_all_impl &t, std::chrono::steady_clock::time_point d)
+    {
+        if (t.curr_write)
+            rio::cancel_after(*t.curr_write, d);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Write_all_impl &t)
+    {
+        if (t.curr_write)
+            rio::cancel(*t.curr_write);
+    }
 };
 
 export struct Read_till_full_impl
@@ -316,6 +394,18 @@ export struct Read_till_full_impl
             curr_read.reset();
         }
     }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Read_till_full_impl &t, std::chrono::steady_clock::time_point d)
+    {
+        if (t.curr_read)
+            rio::cancel_after(*t.curr_read, d);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Read_till_full_impl &t)
+    {
+        if (t.curr_read)
+            rio::cancel(*t.curr_read);
+    }
 };
 
 export struct Read_till_eof_impl
@@ -344,6 +434,18 @@ export struct Read_till_eof_impl
                 return rio::fut::res<std::string>::ready(std::move(out));
             out.append(chunk, n);
         }
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Read_till_eof_impl &t, std::chrono::steady_clock::time_point d)
+    {
+        if (t.curr_read)
+            rio::cancel_after(*t.curr_read, d);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Read_till_eof_impl &t)
+    {
+        if (t.curr_read)
+            rio::cancel(*t.curr_read);
     }
 };
 
@@ -376,6 +478,18 @@ export struct Read_till_impl
 
             out.push_back(c);
         }
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Read_till_impl &t, std::chrono::steady_clock::time_point d)
+    {
+        if (t.curr_read)
+            rio::cancel_after(*t.curr_read, d);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Read_till_impl &t)
+    {
+        if (t.curr_read)
+            rio::cancel(*t.curr_read);
     }
 };
 

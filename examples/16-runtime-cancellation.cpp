@@ -126,6 +126,39 @@ int main()
         rt.start();
     }
 
+    // ---------------------------------------------------------------
+    // 7. Async teardown (shutdown + close): a supervisor shuts the
+    //    listener down to abort a parked accept (it wakes with an
+    //    error), then the listener is closed through the ring.
+    //    shutdown() is fire-and-forget here: the future is dropped
+    //    immediately, but the op still runs (cancel_on_drop = false).
+    // ---------------------------------------------------------------
+    {
+        rt.spawn(rio::fut::accept(IO, listener)
+            .then([](rio::Tcp_accept_result) {
+                std::println("7) ACCEPTED (unexpected)");
+                return rio::fut::ready();
+            })
+            .or_else([](std::error_code ec) {
+                std::println("7) parked accept woke with: {}", ec.message());
+                return rio::fut::ready();
+            }));
+
+        rt.spawn(rio::fut::wake_up_after(IO, 150ms).then([&IO, &listener]() {
+            std::println("7) supervisor: shutdown(listener), dropping future");
+            rio::fut::shutdown(IO, listener.fd.native_handle(), static_cast<int>(rio::Tcp_socket::shut::both));
+            return rio::fut::ready();
+        }));
+
+        rt.start(); // runs until the accept task dies
+
+        auto close_res = rt.block_on(rio::fut::close(IO, std::move(listener)));
+        if (close_res)
+            std::println("7) listener closed via IORING_OP_CLOSE");
+        else
+            std::println("7) listener close failed: {}", close_res.error().message());
+    }
+
     std::println("all done");
     return 0;
 }

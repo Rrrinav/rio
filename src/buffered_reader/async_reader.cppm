@@ -85,6 +85,18 @@ struct Peek_op_impl
             // Loop back to Step 1 to return the view
         }
     }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Peek_op_impl &t, std::chrono::steady_clock::time_point d)
+    {
+        if (t.pending_read)
+            rio::cancel_after(*t.pending_read, d);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Peek_op_impl &t)
+    {
+        if (t.pending_read)
+            rio::cancel(*t.pending_read);
+    }
 };
 
 template <typename Reader>
@@ -140,6 +152,16 @@ struct Read_till_op_impl
             }
         }
     }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Read_till_op_impl &t, std::chrono::steady_clock::time_point d)
+    {
+        rio::cancel_after(t.peek_state, d);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Read_till_op_impl &t)
+    {
+        rio::cancel(t.peek_state);
+    }
 };
 
 template <typename T, typename Reader>
@@ -190,6 +212,16 @@ struct Load_op
         T val;
         std::memcpy(&val, temp_storage.data(), sizeof(T));
         return rio::fut::res<T>::ready(val);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Load_op &t, std::chrono::steady_clock::time_point d)
+    {
+        rio::cancel_after(t.peek_state, d);
+    }
+
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Load_op &t)
+    {
+        rio::cancel(t.peek_state);
     }
 };
 

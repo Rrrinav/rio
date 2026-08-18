@@ -119,6 +119,9 @@ concept Pollable = requires(F &f) {
 export template <typename Fn, typename State>
 concept PollFunction = std::invocable<Fn &, State &> && is_poll_res<std::invoke_result_t<Fn &, State &>>::value;
 
+export template <typename F, typename V>
+concept Pollable_same_value = Pollable<F> && std::is_same_v<typename F::value_type, V>;
+
 namespace fut {
 
 export struct Call_poll
@@ -153,6 +156,9 @@ struct Timeout_impl;
 
 export template <typename F, typename Callback, typename RecoveryFut>
 struct Timeout_with_impl;
+
+export template <Pollable F, typename Fn>
+struct Catch_exception_impl;
 
 export template <typename State, typename BodyFn>
 struct Loop_impl;
@@ -241,6 +247,9 @@ struct Future
 
     template <typename Fn>
     auto or_else(Fn &&fn) &&;
+
+    template <typename Fn>
+    auto catch_exception(Fn &&fn) &&;
 
     template <typename Rep, typename Period>
     auto timeout(std::chrono::duration<Rep, Period> d) &&;
@@ -475,6 +484,105 @@ struct Or_else_impl
 };
 export template <Pollable Fut, typename Fn>
 Or_else_impl(Fut, Fn) -> Or_else_impl<Fut, Fn>;
+
+export template <Pollable Fut, typename Fn>
+struct Catch_exception_impl
+{
+    using value_type = typename Fut::value_type;
+    using handler_result = std::invoke_result_t<Fn, std::exception_ptr>;
+
+    static_assert(
+        Pollable_same_value<handler_result, value_type>
+            || (std::is_void_v<handler_result> && std::is_void_v<value_type>)
+            || (std::is_same_v<handler_result, value_type> && !std::is_void_v<value_type>),
+        "catch_exception handler must return: (1) a Future with the same value_type, "
+        "(2) the value_type itself, or (3) void to swallow the exception (only allowed on void chains)"
+    );
+
+    Fut first_fut;
+    Fn fn;
+
+    enum class Phase : uint8_t { First, Recovery, Done } phase = Phase::First;
+    std::conditional_t<Pollable<handler_result>, std::optional<handler_result>, std::monostate> recovery{};
+
+    Catch_exception_impl(Fut f, Fn func) : first_fut(std::move(f)), fn(std::move(func))
+    {}
+
+    Catch_exception_impl(Catch_exception_impl &&) noexcept = default;
+    Catch_exception_impl &operator=(Catch_exception_impl &&other) noexcept
+    {
+        if (this != &other) {
+            first_fut = std::move(other.first_fut);
+            phase = other.phase;
+            recovery = std::move(other.recovery);
+            std::destroy_at(&fn);
+            std::construct_at(&fn, std::move(other.fn));
+        }
+        return *this;
+    }
+
+    fut::res<value_type> poll()
+    {
+        if (phase == Phase::Done)
+            return fut::res<value_type>::error(std::make_error_code(std::errc::operation_not_permitted));
+
+        if (phase == Phase::First) {
+            try {
+                auto r = rio::poll(first_fut);
+
+                if (r.state == fut::status::ready) {
+                    phase = Phase::Done;
+                    if constexpr (std::is_void_v<value_type>)
+                        return fut::res<void>::ready();
+                    else
+                        return fut::res<value_type>::ready(std::move(*r.value));
+                }
+
+                if (r.state == fut::status::pending)
+                    return fut::res<value_type>::pending();
+
+                phase = Phase::Done;
+                return r;
+            } catch (...) {
+                std::exception_ptr eptr = std::current_exception();
+                if constexpr (Pollable<handler_result>) {
+                    recovery.emplace(fn(eptr));
+                    phase = Phase::Recovery;
+                } else if constexpr (std::is_void_v<handler_result>) {
+                    fn(eptr);
+                    phase = Phase::Done;
+                    return fut::res<void>::ready();
+                } else {
+                    phase = Phase::Done;
+                    return fut::res<value_type>::ready(fn(eptr));
+                }
+            }
+        }
+
+        if constexpr (Pollable<handler_result>) {
+            auto r = rio::poll(*recovery);
+            if (r.state != fut::status::pending)
+                phase = Phase::Done;
+            return r;
+        }
+        phase = Phase::Done;
+        return fut::res<value_type>::error(std::make_error_code(std::errc::operation_not_permitted));
+    }
+    friend auto tag_invoke(poll_t, Catch_exception_impl &c)
+    {
+        return c.poll();
+    }
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Catch_exception_impl &c, std::chrono::steady_clock::time_point d)
+    {
+        rio::cancel_after(c.first_fut.data, d);
+    }
+    friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Catch_exception_impl &c)
+    {
+        rio::cancel(c.first_fut.data);
+    }
+};
+export template <Pollable Fut, typename Fn>
+Catch_exception_impl(Fut, Fn) -> Catch_exception_impl<Fut, Fn>;
 
 export template <typename State, typename Body_fn>
 struct Loop_impl
@@ -1037,6 +1145,14 @@ auto Future<S, P>::or_else(Fn &&fn) &&
 {
     using O = fut::Or_else_impl<Future, std::decay_t<Fn>>;
     return fut::make(O{std::move(*this), std::forward<Fn>(fn)}, fut::Call_poll{});
+}
+
+template <typename S, typename P>
+template <typename Fn>
+auto Future<S, P>::catch_exception(Fn &&fn) &&
+{
+    using C = fut::Catch_exception_impl<Future, std::decay_t<Fn>>;
+    return fut::make(C{std::move(*this), std::forward<Fn>(fn)}, fut::Call_poll{});
 }
 
 template <typename S, typename P>
