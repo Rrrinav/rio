@@ -13,8 +13,7 @@ class Defer_stack
     using dtor_t = void (*)(void *) noexcept;
 
 public:
-    struct entry
-    {
+    struct entry {
         call_t call;
         dtor_t destroy;
         void *obj;
@@ -42,8 +41,9 @@ public:
     void reserve(std::size_t n_entries, std::size_t arena_bytes = 0)
     {
         entries.reserve(n_entries);
-        if (arena_bytes)
+        if (arena_bytes) {
             arena.reserve(arena_bytes);
+        }
     }
 
     template <class F>
@@ -93,8 +93,9 @@ public:
 
     ~Scope_guard() noexcept
     {
-        if (active)
+        if (active) {
             f();
+        }
     }
 
     void dismiss() noexcept

@@ -23,8 +23,7 @@ concept Handle_like_c = requires(T h) {
 };
 
 export template <typename T, typename Payload = std::monostate>
-struct Basic_op
-{
+struct Basic_op {
     using value_type = T;
 
     rio::internals::uring_request_header header{};
@@ -54,8 +53,9 @@ template <typename Op>
 void recycle_if_possible(Op *op)
 {
     op->io_done = true;
-    if (op->future_dropped)
+    if (op->future_dropped) {
         op->ctx->recycle(op);
+    }
 }
 
 template <typename Op, typename Value>
@@ -82,8 +82,7 @@ void finish_error(Op *op, std::error_code ec)
 } // namespace op_detail
 
 export template <typename Op>
-struct Async_handle
-{
+struct Async_handle {
     using value_type = typename Op::value_type;
 
     Op *ptr = nullptr;
@@ -100,12 +99,13 @@ struct Async_handle
     {
         if (this != &other) {
             if (ptr) {
-                if (ptr->io_done)
+                if (ptr->io_done) {
                     ptr->ctx->recycle(ptr);
-                else {
+                } else {
                     ptr->future_dropped = true;
-                    if (ptr->ctx && ptr->cancel_on_drop)
+                    if (ptr->ctx && ptr->cancel_on_drop) {
                         ptr->ctx->cancel_request(&ptr->header);
+                    }
                 }
             }
             ptr = other.ptr;
@@ -116,14 +116,17 @@ struct Async_handle
 
     ~Async_handle()
     {
-        if (!ptr) return;
+        if (!ptr) {
+            return;
+        }
 
         if (ptr->io_done) {
             ptr->ctx->recycle(ptr);
         } else {
             ptr->future_dropped = true;
-            if (ptr->ctx && ptr->cancel_on_drop)
+            if (ptr->ctx && ptr->cancel_on_drop) {
                 ptr->ctx->cancel_request(&ptr->header);
+            }
         }
     }
 
@@ -134,15 +137,17 @@ struct Async_handle
 
     void cancel()
     {
-        if (!ptr || ptr->io_done)
+        if (!ptr || ptr->io_done) {
             return;
+        }
         ptr->ctx->cancel_request(&ptr->header);
     }
 
     void cancel_after(std::chrono::steady_clock::time_point deadline)
     {
-        if (!ptr || ptr->io_done)
+        if (!ptr || ptr->io_done) {
             return;
+        }
         ptr->ctx->schedule_cancel(deadline, &ptr->header);
     }
 
@@ -164,8 +169,7 @@ auto make_async_future(Op *op)
 }
 
 template <typename T>
-struct Counted_op : Basic_op<T>
-{
+struct Counted_op : Basic_op<T> {
     using Basic_op<T>::Basic_op;
 
     auto poll()
@@ -176,12 +180,13 @@ struct Counted_op : Basic_op<T>
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Counted_op *>(ptr);
-        if (res == -ECANCELED)
+        if (res == -ECANCELED) {
             op_detail::finish_error(self, std::make_error_code(std::errc::operation_canceled));
-        else if (res < 0)
+        } else if (res < 0) {
             op_detail::finish_error(self, std::error_code(-res, std::system_category()));
-        else
+        } else {
             op_detail::finish_success(self, static_cast<T>(res));
+        }
     }
 };
 
@@ -209,26 +214,25 @@ export auto write(rio::context &ctx, int fd, std::span<const char> buf, size_t o
     return make_async_future(op);
 }
 
-struct Shutdown_payload
-{
+struct Shutdown_payload {
     int how{};
 };
 
 using Shutdown_op = Basic_op<void, Shutdown_payload>;
 
-struct Shutdown_op_impl : Shutdown_op
-{
+struct Shutdown_op_impl : Shutdown_op {
     using Shutdown_op::Shutdown_op;
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Shutdown_op_impl *>(ptr);
-        if (res == -ECANCELED)
+        if (res == -ECANCELED) {
             op_detail::finish_error(self, std::make_error_code(std::errc::operation_canceled));
-        else if (res < 0)
+        } else if (res < 0) {
             op_detail::finish_error(self, std::error_code(-res, std::system_category()));
-        else
+        } else {
             op_detail::finish_success(self);
+        }
     }
 };
 
@@ -246,19 +250,19 @@ export auto shutdown(rio::context &ctx, int fd, int how)
 
 using Close_op = Basic_op<void>;
 
-struct Close_op_impl : Close_op
-{
+struct Close_op_impl : Close_op {
     using Close_op::Close_op;
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Close_op_impl *>(ptr);
-        if (res == -ECANCELED)
+        if (res == -ECANCELED) {
             op_detail::finish_error(self, std::make_error_code(std::errc::operation_canceled));
-        else if (res < 0)
+        } else if (res < 0) {
             op_detail::finish_error(self, std::error_code(-res, std::system_category()));
-        else
+        } else {
             op_detail::finish_success(self);
+        }
     }
 };
 
@@ -274,31 +278,29 @@ export auto close(rio::context &ctx, int fd)
     return make_async_future(op);
 }
 
-struct Timer_payload
-{
+struct Timer_payload {
     __kernel_timespec ts{};
 };
 
 using Timer_op = Basic_op<void, Timer_payload>;
 
-struct Timer_op_impl : Timer_op
-{
+struct Timer_op_impl : Timer_op {
     using Timer_op::Timer_op;
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Timer_op_impl *>(ptr);
-        if (res == -ETIME || res == 0)
+        if (res == -ETIME || res == 0) {
             op_detail::finish_success(self);
-        else if (res == -ECANCELED)
+        } else if (res == -ECANCELED) {
             op_detail::finish_error(self, std::make_error_code(std::errc::operation_canceled));
-        else
+        } else {
             op_detail::finish_error(self, std::error_code(-res, std::system_category()));
+        }
     }
 };
 
-export struct Link_timeout_req
-{
+export struct Link_timeout_req {
     rio::internals::uring_request_header header{};
     rio::context *ctx{};
     __kernel_timespec ts{};
@@ -331,8 +333,7 @@ auto wake_up_after(rio::context &ctx, std::chrono::duration<Rep, Period> d)
 }
 
 // Composite IO Operations
-export struct Write_all_impl
-{
+export struct Write_all_impl {
     rio::context *ctx;
     int fd;
     std::span<const char> remaining{};
@@ -341,16 +342,20 @@ export struct Write_all_impl
     auto poll() -> rio::fut::res<void>
     {
         while (true) {
-            if (remaining.empty())
+            if (remaining.empty()) {
                 return rio::fut::res<void>::ready();
-            if (!curr_write)
+            }
+            if (!curr_write) {
                 curr_write.emplace(write(*ctx, fd, remaining));
+            }
 
             auto r = curr_write->poll();
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<void>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<void>::error(r.err);
+            }
 
             remaining = remaining.subspan(*r.value);
             curr_write.reset();
@@ -359,19 +364,20 @@ export struct Write_all_impl
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Write_all_impl &t, std::chrono::steady_clock::time_point d)
     {
-        if (t.curr_write)
+        if (t.curr_write) {
             rio::cancel_after(*t.curr_write, d);
+        }
     }
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Write_all_impl &t)
     {
-        if (t.curr_write)
+        if (t.curr_write) {
             rio::cancel(*t.curr_write);
+        }
     }
 };
 
-export struct Read_till_full_impl
-{
+export struct Read_till_full_impl {
     rio::context *ctx;
     int fd;
     std::span<char> remaining{};
@@ -380,20 +386,25 @@ export struct Read_till_full_impl
     auto poll() -> rio::fut::res<void>
     {
         while (true) {
-            if (remaining.empty())
+            if (remaining.empty()) {
                 return rio::fut::res<void>::ready();
-            if (!curr_read)
+            }
+            if (!curr_read) {
                 curr_read.emplace(read(*ctx, fd, remaining));
+            }
 
             auto r = curr_read->poll();
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<void>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<void>::error(r.err);
+            }
 
             size_t n = *r.value;
-            if (n == 0)
+            if (n == 0) {
                 return rio::fut::res<void>::error(std::make_error_code(std::errc::broken_pipe));
+            }
 
             remaining = remaining.subspan(n);
             curr_read.reset();
@@ -402,19 +413,20 @@ export struct Read_till_full_impl
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Read_till_full_impl &t, std::chrono::steady_clock::time_point d)
     {
-        if (t.curr_read)
+        if (t.curr_read) {
             rio::cancel_after(*t.curr_read, d);
+        }
     }
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Read_till_full_impl &t)
     {
-        if (t.curr_read)
+        if (t.curr_read) {
             rio::cancel(*t.curr_read);
+        }
     }
 };
 
-export struct Read_till_eof_impl
-{
+export struct Read_till_eof_impl {
     rio::context *ctx;
     int fd;
     std::string out{};
@@ -424,38 +436,43 @@ export struct Read_till_eof_impl
     auto poll() -> rio::fut::res<std::string>
     {
         while (true) {
-            if (!curr_read)
+            if (!curr_read) {
                 curr_read.emplace(read(*ctx, fd, std::span{chunk}));
+            }
 
             auto r = curr_read->poll();
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<std::string>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<std::string>::error(r.err);
+            }
 
             size_t n = *r.value;
             curr_read.reset();
-            if (n == 0)
+            if (n == 0) {
                 return rio::fut::res<std::string>::ready(std::move(out));
+            }
             out.append(chunk, n);
         }
     }
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Read_till_eof_impl &t, std::chrono::steady_clock::time_point d)
     {
-        if (t.curr_read)
+        if (t.curr_read) {
             rio::cancel_after(*t.curr_read, d);
+        }
     }
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Read_till_eof_impl &t)
     {
-        if (t.curr_read)
+        if (t.curr_read) {
             rio::cancel(*t.curr_read);
+        }
     }
 };
 
-export struct Read_till_impl
-{
+export struct Read_till_impl {
     rio::context *ctx;
     int fd;
     char delim{};
@@ -466,20 +483,25 @@ export struct Read_till_impl
     auto poll() -> rio::fut::res<std::string>
     {
         while (true) {
-            if (!curr_read)
+            if (!curr_read) {
                 curr_read.emplace(read(*ctx, fd, std::span{&c, 1}));
+            }
 
             auto r = curr_read->poll();
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<std::string>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<std::string>::error(r.err);
+            }
 
             curr_read.reset();
-            if (*r.value == 0)
+            if (*r.value == 0) {
                 return rio::fut::res<std::string>::ready(std::move(out));
-            if (c == delim)
+            }
+            if (c == delim) {
                 return rio::fut::res<std::string>::ready(std::move(out));
+            }
 
             out.push_back(c);
         }
@@ -487,14 +509,16 @@ export struct Read_till_impl
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Read_till_impl &t, std::chrono::steady_clock::time_point d)
     {
-        if (t.curr_read)
+        if (t.curr_read) {
             rio::cancel_after(*t.curr_read, d);
+        }
     }
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Read_till_impl &t)
     {
-        if (t.curr_read)
+        if (t.curr_read) {
             rio::cancel(*t.curr_read);
+        }
     }
 };
 
@@ -502,19 +526,19 @@ export template <typename Rep, typename Period>
 auto stop_read_after(rio::context &ctx, int fd, std::span<char> buf, std::chrono::duration<Rep, Period> timeout)
 {
     using namespace std::chrono;
-    struct Timed_read_op : Read_write_op
-    {
+    struct Timed_read_op : Read_write_op {
         using Read_write_op::Read_write_op;
 
         static void on_complete(rio::internals::uring_request_header *ptr, int res)
         {
             auto *self = reinterpret_cast<Timed_read_op *>(ptr);
-            if (res == -ECANCELED)
+            if (res == -ECANCELED) {
                 op_detail::finish_error(self, std::make_error_code(std::errc::timed_out));
-            else if (res < 0)
+            } else if (res < 0) {
                 op_detail::finish_error(self, std::error_code(-res, std::system_category()));
-            else
+            } else {
                 op_detail::finish_success(self, static_cast<std::size_t>(res));
+            }
         }
     };
 

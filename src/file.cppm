@@ -55,8 +55,7 @@ export template <file_state S>
 struct file;
 
 export template <>
-struct file<file_state::closed>
-{
+struct file<file_state::closed> {
     file() = default;
 
     file(const file &) = delete;
@@ -66,8 +65,7 @@ struct file<file_state::closed>
 };
 
 export template <>
-struct file<file_state::open>
-{
+struct file<file_state::open> {
     // Capability marker: only readable states carry this, so the generic
     // io/fut read/write overloads reject closed handles at compile time.
     using readable_tag = void;

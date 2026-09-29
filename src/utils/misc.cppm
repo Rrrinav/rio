@@ -62,10 +62,11 @@ export auto split(std::string_view str, char delim) -> std::vector<std::string_v
 export auto trim(std::string_view str) -> std::string_view
 {
     auto start = str.find_first_not_of(" \t\r\n");
-    if (start == std::string_view::npos) return "";
+    if (start == std::string_view::npos) {
+        return "";
+    }
 
     auto end = str.find_last_not_of(" \t\r\n");
     return str.substr(start, end - start + 1);
 }
 }; // namespace rio::util
-

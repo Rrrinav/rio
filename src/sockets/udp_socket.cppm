@@ -53,8 +53,7 @@ export template <udp_state S>
 struct Udp_socket;
 
 export template <>
-struct Udp_socket<udp_state::closed>
-{
+struct Udp_socket<udp_state::closed> {
     Udp_socket() = default;
 
     Udp_socket(const Udp_socket &) = delete;
@@ -67,12 +66,11 @@ namespace detail {
 // Shared interior for the open states; state-specific operations live
 // on the specializations, not here.
 template <typename Sock>
-struct udp_base
-{
-  protected:
+struct udp_base {
+protected:
     rio::handle fd{};
 
-  public:
+public:
     udp_base() = default;
     explicit udp_base(rio::handle &&h) noexcept : fd(std::move(h))
     {}
@@ -132,8 +130,7 @@ struct udp_base
 } // namespace detail
 
 export template <>
-struct Udp_socket<udp_state::unbound> : detail::udp_base<Udp_socket<udp_state::unbound>>
-{
+struct Udp_socket<udp_state::unbound> : detail::udp_base<Udp_socket<udp_state::unbound>> {
     Udp_socket() = default;
     explicit Udp_socket(rio::handle &&h) noexcept : udp_base(std::move(h))
     {}
@@ -153,8 +150,7 @@ struct Udp_socket<udp_state::unbound> : detail::udp_base<Udp_socket<udp_state::u
 };
 
 export template <>
-struct Udp_socket<udp_state::bound> : detail::udp_base<Udp_socket<udp_state::bound>>
-{
+struct Udp_socket<udp_state::bound> : detail::udp_base<Udp_socket<udp_state::bound>> {
     Udp_socket() = default;
     explicit Udp_socket(rio::handle &&h) noexcept : udp_base(std::move(h))
     {}
@@ -266,8 +262,7 @@ auto Udp_socket<udp_state::unbound>::open(udp_opt options) -> result<Udp_socket>
     return Udp_socket::attach(s);
 }
 
-auto Udp_socket<udp_state::unbound>::open_and_bind(const rio::address &addr, udp_opt options)
-    -> result<Udp_socket<udp_state::bound>>
+auto Udp_socket<udp_state::unbound>::open_and_bind(const rio::address &addr, udp_opt options) -> result<Udp_socket<udp_state::bound>>
 {
     auto o_res = open(options);
     if (!o_res) [[unlikely]] {

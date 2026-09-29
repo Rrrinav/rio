@@ -25,33 +25,37 @@ namespace rio::http::v1_1 {
 
 export class Handler
 {
-    static constexpr std::size_t buf_size  = 48;
+    static constexpr std::size_t buf_size = 48;
     static constexpr std::size_t buf_align = alignof(std::max_align_t);
 
     struct Vtable {
         response (*call)(const void *, const request &) noexcept(false);
-        void     (*move)(void *dst, void *src)          noexcept;
-        void     (*destroy)(void *)                     noexcept;
+        void (*move)(void *dst, void *src) noexcept;
+        void (*destroy)(void *) noexcept;
     };
 
     alignas(buf_align) std::byte buf_[buf_size]{};
-    const Vtable *vt_{ nullptr };
-    bool          heap_{ false };
+    const Vtable *vt_{nullptr};
+    bool heap_{false};
 
-    void *storage()       noexcept { return heap_ ? *reinterpret_cast<void **>(buf_) : buf_; }
-    const void *storage() const noexcept { return heap_ ? *reinterpret_cast<void *const *>(buf_) : buf_; }
+    void *storage() noexcept
+    {
+        return heap_ ? *reinterpret_cast<void **>(buf_) : buf_;
+    }
+    const void *storage() const noexcept
+    {
+        return heap_ ? *reinterpret_cast<void *const *>(buf_) : buf_;
+    }
 
     template <typename F>
     static const Vtable *vtable_for() noexcept
     {
         static constexpr Vtable vt{
             // call
-            [](const void *p, const request &req) -> response {
-                return (*static_cast<const F *>(p))(req);
-            },
+            [](const void *p, const request &req) -> response { return (*static_cast<const F *>(p))(req); },
             // move
             [](void *dst, void *src) noexcept {
-                ::new(dst) F(std::move(*static_cast<F *>(src)));
+                ::new (dst) F(std::move(*static_cast<F *>(src)));
                 static_cast<F *>(src)->~F();
             },
             // destroy
@@ -64,13 +68,12 @@ public:
     Handler() = default;
 
     template <typename F>
-        requires (!std::same_as<std::remove_cvref_t<F>, Handler> &&
-                  std::invocable<F, const request &>)
+        requires(!std::same_as<std::remove_cvref_t<F>, Handler> && std::invocable<F, const request &>)
     Handler(F &&f)
     {
         using Fd = std::decay_t<F>;
         if constexpr (sizeof(Fd) <= buf_size && alignof(Fd) <= buf_align) {
-            ::new(buf_) Fd(std::forward<F>(f));
+            ::new (buf_) Fd(std::forward<F>(f));
             heap_ = false;
         } else {
             auto *p = new Fd(std::forward<F>(f));
@@ -82,7 +85,9 @@ public:
 
     Handler(Handler &&o) noexcept
     {
-        if (!o.vt_) return;
+        if (!o.vt_) {
+            return;
+        }
         if (o.heap_) {
             // Just steal the heap pointer.
             std::memcpy(buf_, o.buf_, sizeof(void *));
@@ -91,27 +96,36 @@ public:
             o.vt_->move(buf_, o.buf_);
             heap_ = false;
         }
-        vt_   = o.vt_;
+        vt_ = o.vt_;
         o.vt_ = nullptr;
     }
 
     Handler &operator=(Handler &&o) noexcept
     {
-        if (this == &o) return *this;
+        if (this == &o) {
+            return *this;
+        }
         this->~Handler();
-        ::new(this) Handler(std::move(o));
+        ::new (this) Handler(std::move(o));
         return *this;
     }
 
     ~Handler()
     {
-        if (!vt_) return;
+        if (!vt_) {
+            return;
+        }
         vt_->destroy(storage());
-        if (heap_) ::operator delete(*reinterpret_cast<void **>(buf_));
+        if (heap_) {
+            ::operator delete(*reinterpret_cast<void **>(buf_));
+        }
         vt_ = nullptr;
     }
 
-    [[nodiscard]] bool empty() const noexcept { return vt_ == nullptr; }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return vt_ == nullptr;
+    }
 
     response operator()(const request &req) const
     {
@@ -119,14 +133,13 @@ public:
     }
 
     // Non-copyable (callables may be move-only).
-    Handler(const Handler &)            = delete;
+    Handler(const Handler &) = delete;
     Handler &operator=(const Handler &) = delete;
 };
 
-struct Route
-{
+struct Route {
     std::string path;
-    Handler     handler;
+    Handler handler;
 };
 
 // Router
@@ -160,7 +173,9 @@ public:
     void add_route(method m, std::string path, Handler handler)
     {
         const auto idx = static_cast<std::size_t>(m);
-        if (idx >= bucket_count) return; // ignore 'unknown'
+        if (idx >= bucket_count) {
+            return; // ignore 'unknown'
+        }
 
         auto &bucket = table_[idx];
 
@@ -171,23 +186,42 @@ public:
                 return;
             }
         }
-        bucket.push_back({ std::move(path), std::move(handler) });
+        bucket.push_back({std::move(path), std::move(handler)});
     }
 
-    void get    (std::string p, Handler h) { add_route(method::get,     std::move(p), std::move(h)); }
-    void post   (std::string p, Handler h) { add_route(method::post,    std::move(p), std::move(h)); }
-    void put    (std::string p, Handler h) { add_route(method::put,     std::move(p), std::move(h)); }
-    void del    (std::string p, Handler h) { add_route(method::del,     std::move(p), std::move(h)); }
-    void patch  (std::string p, Handler h) { add_route(method::patch,   std::move(p), std::move(h)); }
-    void options(std::string p, Handler h) { add_route(method::options, std::move(p), std::move(h)); }
+    void get(std::string p, Handler h)
+    {
+        add_route(method::get, std::move(p), std::move(h));
+    }
+    void post(std::string p, Handler h)
+    {
+        add_route(method::post, std::move(p), std::move(h));
+    }
+    void put(std::string p, Handler h)
+    {
+        add_route(method::put, std::move(p), std::move(h));
+    }
+    void del(std::string p, Handler h)
+    {
+        add_route(method::del, std::move(p), std::move(h));
+    }
+    void patch(std::string p, Handler h)
+    {
+        add_route(method::patch, std::move(p), std::move(h));
+    }
+    void options(std::string p, Handler h)
+    {
+        add_route(method::options, std::move(p), std::move(h));
+    }
 
     [[nodiscard]]
     response dispatch(const request &req) const
     {
         const auto method_idx = static_cast<std::size_t>(req.method);
 
-        if (method_idx >= bucket_count)
+        if (method_idx >= bucket_count) {
             return response::text("405 Method Not Allowed", status_code::method_not_allowed);
+        }
 
         const std::string_view path = req.path;
 
@@ -197,19 +231,26 @@ public:
 
         // Search the target method's bucket first — the fast path.
         for (const auto &r : table_[method_idx]) {
-            if (r.path == path) { matched = &r; break; }
+            if (r.path == path) {
+                matched = &r;
+                break;
+            }
         }
 
-        if (matched)
+        if (matched) {
             return matched->handler(req);
+        }
 
         // Not found in target method — check other methods to distinguish
         // 404 (path unknown) from 405 (path known, method wrong).
         for (std::size_t i = 0; i < bucket_count; ++i) {
-            if (i == method_idx) continue;
+            if (i == method_idx) {
+                continue;
+            }
             for (const auto &r : table_[i]) {
-                if (r.path == path)
+                if (r.path == path) {
                     return response::text("405 Method Not Allowed", status_code::method_not_allowed);
+                }
             }
         }
 
@@ -218,4 +259,3 @@ public:
 };
 
 } // namespace rio::http::v1_1
-

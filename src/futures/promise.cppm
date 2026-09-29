@@ -13,8 +13,7 @@ concept StateLike = requires(S *s, std::error_code ec) {
 };
 
 export template <typename StateT>
-struct Promise
-{
+struct Promise {
     StateT *state = nullptr;
 
     Promise() = default;
@@ -45,23 +44,24 @@ struct Promise
     template <typename... Args>
     auto resolve(Args &&...args) -> bool
     {
-        if (!state)
+        if (!state) {
             return false;
+        }
         return state->resolve(std::forward<Args>(args)...);
     }
 
     auto reject(std::error_code ec) -> bool
     {
-        if (!state)
+        if (!state) {
             return false;
+        }
         return state->reject(ec);
     }
 };
 
 export namespace promise {
 template <typename T>
-struct State
-{
+struct State {
     using value_type = T;
 
     std::optional<T> value{};
@@ -72,8 +72,9 @@ struct State
     // reported as false) instead of silently overwriting the outcome.
     auto resolve(T v) -> bool
     {
-        if (is_ready)
+        if (is_ready) {
             return false;
+        }
         value.emplace(std::move(v));
         is_ready = true;
         return true;
@@ -81,8 +82,9 @@ struct State
 
     auto reject(std::error_code ec) -> bool
     {
-        if (is_ready)
+        if (is_ready) {
             return false;
+        }
         error = ec;
         is_ready = true;
         return true;
@@ -91,18 +93,18 @@ struct State
     auto poll() -> rio::fut::res<T>
     {
         if (is_ready) {
-            if (value)
+            if (value) {
                 return rio::fut::res<T>::ready(std::move(*value));
-            else
+            } else {
                 return rio::fut::res<T>::error(error);
+            }
         }
         return rio::fut::res<T>::pending();
     }
 };
 
 template <>
-struct State<void>
-{
+struct State<void> {
     using value_type = void;
 
     std::error_code error{};
@@ -111,16 +113,18 @@ struct State<void>
     // Set-once: see State<T>.
     auto resolve() -> bool
     {
-        if (is_ready)
+        if (is_ready) {
             return false;
+        }
         is_ready = true;
         return true;
     }
 
     auto reject(std::error_code ec) -> bool
     {
-        if (is_ready)
+        if (is_ready) {
             return false;
+        }
         error = ec;
         is_ready = true;
         return true;
@@ -129,8 +133,9 @@ struct State<void>
     auto poll() -> rio::fut::res<void>
     {
         if (is_ready) {
-            if (error)
+            if (error) {
                 return rio::fut::res<void>::error(error);
+            }
             return rio::fut::res<void>::ready();
         }
         return rio::fut::res<void>::pending();

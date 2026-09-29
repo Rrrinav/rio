@@ -54,8 +54,9 @@ public:
                 auto res = active_tasks_[i].poll();
 
                 if (res.state != rio::fut::status::pending) {
-                    if (i != active_tasks_.size() - 1)
+                    if (i != active_tasks_.size() - 1) {
                         active_tasks_[i] = std::move(active_tasks_.back());
+                    }
 
                     active_tasks_.pop_back();
                     task_progress = true;
@@ -90,10 +91,11 @@ public:
             auto root_res = rio::poll(root_fut);
 
             if (root_res.state == rio::fut::status::ready) {
-                if constexpr (std::is_void_v<Return_type>)
+                if constexpr (std::is_void_v<Return_type>) {
                     return std::monostate{};
-                else
+                } else {
                     return std::move(*root_res.value);
+                }
             }
             if (root_res.state == rio::fut::status::error) {
                 return std::unexpected(root_res.err);
@@ -112,8 +114,9 @@ public:
                 auto res = active_tasks_[i].poll();
 
                 if (res.state != rio::fut::status::pending) {
-                    if (i != active_tasks_.size() - 1)
+                    if (i != active_tasks_.size() - 1) {
                         active_tasks_[i] = std::move(active_tasks_.back());
+                    }
                     active_tasks_.pop_back();
                     task_progress = true;
                 } else {

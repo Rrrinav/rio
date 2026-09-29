@@ -15,32 +15,32 @@ import :fut.io;
 
 namespace rio::fut {
 
-struct Accept_payload
-{
+struct Accept_payload {
     rio::address client_addr;
     socklen_t addr_len = sizeof(sockaddr_storage);
 };
 
 using Accept_req = Basic_op<Tcp_accept_result, Accept_payload>;
 
-struct Accept_req_impl : Accept_req
-{
+struct Accept_req_impl : Accept_req {
     using Accept_req::Accept_req;
 
     static void finish(Accept_req_impl *self, std::error_code ec)
     {
         self->state.reject(ec);
         self->io_done = true;
-        if (self->future_dropped)
+        if (self->future_dropped) {
             self->ctx->recycle(self);
+        }
     }
 
     static void finish(Accept_req_impl *self, Tcp_accept_result result)
     {
         self->state.resolve(std::move(result));
         self->io_done = true;
-        if (self->future_dropped)
+        if (self->future_dropped) {
             self->ctx->recycle(self);
+        }
     }
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
@@ -52,42 +52,48 @@ struct Accept_req_impl : Accept_req
             finish(self, std::error_code(-res, std::system_category()));
         } else {
             self->payload.client_addr.len = self->payload.addr_len;
-            finish(self, Tcp_accept_result{.client = rio::Tcp_socket<rio::tcp_state::connected>::attach(res), .address = std::move(self->payload.client_addr)});
+            finish(
+                self,
+                Tcp_accept_result{
+                    .client = rio::Tcp_socket<rio::tcp_state::connected>::attach(res),
+                    .address = std::move(self->payload.client_addr)});
         }
     }
 };
 
 using Connect_req = Basic_op<void, rio::address>;
 
-struct Connect_req_impl : Connect_req
-{
+struct Connect_req_impl : Connect_req {
     using Connect_req::Connect_req;
 
     static void finish(Connect_req_impl *self, std::error_code ec)
     {
         self->state.reject(ec);
         self->io_done = true;
-        if (self->future_dropped)
+        if (self->future_dropped) {
             self->ctx->recycle(self);
+        }
     }
 
     static void finish(Connect_req_impl *self)
     {
         self->state.resolve();
         self->io_done = true;
-        if (self->future_dropped)
+        if (self->future_dropped) {
             self->ctx->recycle(self);
+        }
     }
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Connect_req_impl *>(ptr);
-        if (res == -ECANCELED)
+        if (res == -ECANCELED) {
             finish(self, std::make_error_code(std::errc::operation_canceled));
-        else if (res < 0)
+        } else if (res < 0) {
             finish(self, std::error_code(-res, std::system_category()));
-        else
+        } else {
             finish(self);
+        }
     }
 };
 
@@ -98,7 +104,11 @@ export auto accept(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening>
     auto *sqe = ctx.sqe();
 
     io_uring_prep_accept(
-        sqe, listener.native_handle(), reinterpret_cast<sockaddr *>(&req->payload.client_addr.storage), &req->payload.addr_len, SOCK_CLOEXEC);
+        sqe,
+        listener.native_handle(),
+        reinterpret_cast<sockaddr *>(&req->payload.client_addr.storage),
+        &req->payload.addr_len,
+        SOCK_CLOEXEC);
 
     io_uring_sqe_set_data(sqe, &req->header);
     return rio::Future(Async_handle<Accept_req_impl>{req}, rio::fut::Call_poll{});
@@ -141,8 +151,7 @@ export auto close(rio::context &ctx, Closable_c auto sock)
 }
 
 export template <typename Handler>
-struct Accept_many_impl
-{
+struct Accept_many_impl {
     rio::context *ctx;
     rio::Tcp_socket<rio::tcp_state::listening> *listener;
     size_t remaining;
@@ -152,14 +161,17 @@ struct Accept_many_impl
     auto poll() -> rio::fut::res<void>
     {
         while (remaining > 0) {
-            if (!curr_fut)
+            if (!curr_fut) {
                 curr_fut.emplace(accept(*ctx, *listener));
+            }
             auto r = curr_fut->poll();
 
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<void>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<void>::error(r.err);
+            }
 
             auto [sock, addr] = std::move(*r.value);
             std::invoke(handler, std::move(sock), std::move(addr));
@@ -180,8 +192,7 @@ auto accept_many(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening> &
 }
 
 export template <typename Handler>
-struct Accept_all_impl
-{
+struct Accept_all_impl {
     rio::context *ctx;
     rio::Tcp_socket<rio::tcp_state::listening> *listener;
     Handler handler;
@@ -190,14 +201,17 @@ struct Accept_all_impl
     auto poll() -> rio::fut::res<void>
     {
         while (true) {
-            if (!curr_fut)
+            if (!curr_fut) {
                 curr_fut.emplace(accept(*ctx, *listener));
+            }
             auto r = curr_fut->poll();
 
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<void>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<void>::error(r.err);
+            }
 
             auto [sock, addr] = std::move(*r.value);
             std::invoke(handler, std::move(sock), std::move(addr));
@@ -214,8 +228,7 @@ auto accept_all(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening> &l
 }
 
 export template <typename OutputIt>
-struct Accept_into_impl
-{
+struct Accept_into_impl {
     rio::context *ctx;
     rio::Tcp_socket<rio::tcp_state::listening> *listener;
     size_t remaining;
@@ -225,14 +238,17 @@ struct Accept_into_impl
     auto poll() -> rio::fut::res<void>
     {
         while (remaining > 0) {
-            if (!curr_fut)
+            if (!curr_fut) {
                 curr_fut.emplace(accept(*ctx, *listener));
+            }
             auto r = curr_fut->poll();
 
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<void>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<void>::error(r.err);
+            }
 
             *it++ = std::move(*r.value);
 
@@ -253,24 +269,25 @@ export template <typename Rep, typename Period>
 auto stop_accept_after(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening> &listener, std::chrono::duration<Rep, Period> timeout)
 {
     using namespace std::chrono;
-    struct Timed_accept_req : Accept_req
-    {
+    struct Timed_accept_req : Accept_req {
         using Accept_req::Accept_req;
 
         static void finish(Timed_accept_req *self, std::error_code ec)
         {
             self->state.reject(ec);
             self->io_done = true;
-            if (self->future_dropped)
+            if (self->future_dropped) {
                 self->ctx->recycle(self);
+            }
         }
 
         static void finish(Timed_accept_req *self, Tcp_accept_result result)
         {
             self->state.resolve(std::move(result));
             self->io_done = true;
-            if (self->future_dropped)
+            if (self->future_dropped) {
                 self->ctx->recycle(self);
+            }
         }
 
         static void on_complete(rio::internals::uring_request_header *ptr, int res)
@@ -282,7 +299,11 @@ auto stop_accept_after(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listen
                 finish(self, std::error_code(-res, std::system_category()));
             } else {
                 self->payload.client_addr.len = self->payload.addr_len;
-                finish(self, Tcp_accept_result{.client = rio::Tcp_socket<rio::tcp_state::connected>::attach(res), .address = std::move(self->payload.client_addr)});
+                finish(
+                    self,
+                    Tcp_accept_result{
+                        .client = rio::Tcp_socket<rio::tcp_state::connected>::attach(res),
+                        .address = std::move(self->payload.client_addr)});
             }
         }
     };

@@ -6,8 +6,7 @@ import std;
 
 namespace rio {
 
-export struct Err
-{
+export struct Err {
     std::error_code code;
     std::string context;
 
@@ -25,8 +24,9 @@ export struct Err
     [[nodiscard]]
     std::string message() const
     {
-        if (context.empty())
+        if (context.empty()) {
             return code.message();
+        }
         return std::format("{}\n    err({}): {}.", context, code.value(), code.message());
     }
 
@@ -47,8 +47,7 @@ using result = std::expected<T, Err>;
 } // namespace rio
 
 export template <>
-struct std::formatter<rio::Err> : std::formatter<std::string>
-{
+struct std::formatter<rio::Err> : std::formatter<std::string> {
     auto format(const rio::Err &err, std::format_context &ctx) const
     {
         return std::formatter<std::string>::format(err.message(), ctx);

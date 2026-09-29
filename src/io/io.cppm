@@ -35,8 +35,9 @@ export auto read(int fd, std::span<char> buf) -> result<size_t>
     while (true) {
         ssize_t n = ::read(fd, buf.data(), buf.size());
         if (n < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR) {
                 continue;
+            }
             return std::unexpected(rio::Err::sys("read failed"));
         }
         return static_cast<size_t>(n);
@@ -53,8 +54,9 @@ export auto write(int fd, std::span<const char> buf) -> result<size_t>
     while (true) {
         ssize_t n = ::write(fd, buf.data(), buf.size());
         if (n < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR) {
                 continue;
+            }
             return std::unexpected(rio::Err::sys("write failed"));
         }
         return static_cast<size_t>(n);
@@ -71,12 +73,14 @@ export auto read_till_full(int fd, std::span<char> buf) -> result<void>
     size_t total = 0;
     while (total < buf.size()) {
         auto res = read(fd, buf.subspan(total));
-        if (!res)
+        if (!res) {
             return std::unexpected(res.error());
+        }
 
         size_t n = *res;
-        if (n == 0)
+        if (n == 0) {
             return std::unexpected(rio::Err::app(std::errc::broken_pipe, "Unexpected EOF in read_till_full"));
+        }
 
         total += n;
     }
@@ -93,8 +97,9 @@ export auto write_all(int fd, std::span<const char> buf) -> result<void>
     size_t total = 0;
     while (total < buf.size()) {
         auto res = write(fd, buf.subspan(total));
-        if (!res)
+        if (!res) {
             return std::unexpected(res.error());
+        }
 
         total += *res;
     }
@@ -114,12 +119,14 @@ export auto read_till_eof(int fd) -> result<std::string>
 
     while (true) {
         auto res = read(fd, std::span{buf});
-        if (!res)
+        if (!res) {
             return std::unexpected(res.error());
+        }
 
         size_t n = *res;
-        if (n == 0)
+        if (n == 0) {
             break; // EOF
+        }
 
         out.append(buf, n);
     }
@@ -141,15 +148,18 @@ export auto read_till(int fd, char delim) -> result<std::string>
     while (true) {
         // Very inefficient (1 byte syscalls), but safe for blocking mixed streams.
         auto res = read(fd, std::span{&c, 1});
-        if (!res)
+        if (!res) {
             return std::unexpected(res.error());
+        }
 
         size_t n = *res;
-        if (n == 0)
+        if (n == 0) {
             break; // EOF
+        }
 
-        if (c == delim)
+        if (c == delim) {
             break;
+        }
         out.push_back(c);
     }
     return out;

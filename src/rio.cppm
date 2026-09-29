@@ -69,10 +69,9 @@ consteval std::uint8_t parse_u8(std::string_view sv)
     }
     return res;
 }
-}
+} // namespace detail
 
-export struct version
-{
+export struct version {
     // Single source of truth
     static constexpr std::string_view ver_str = "0.0.0"sv;
 

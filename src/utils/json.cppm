@@ -99,11 +99,10 @@ export using Object = std::vector<std::pair<std::string, Value>>;
 export using Array = std::vector<Value>;
 
 export template <typename T>
-concept Compatible_c = std::is_same_v<T, double> || std::is_same_v<T, bool> || std::is_same_v<T, std::string>
-    || std::convertible_to<T, std::string> || std::is_same_v<T, Object> || std::is_same_v<T, Array> || std::is_same_v<T, std::nullptr_t>;
+concept Compatible_c = std::is_same_v<T, double> || std::is_same_v<T, bool> || std::is_same_v<T, std::string> || std::convertible_to<T, std::string>
+    || std::is_same_v<T, Object> || std::is_same_v<T, Array> || std::is_same_v<T, std::nullptr_t>;
 
-struct Value
-{
+struct Value {
     std::variant<double, bool, std::string, Object, Array, std::nullptr_t> inner;
 
     Value() : inner(nullptr)
@@ -123,16 +122,18 @@ struct Value
     template <typename T>
     auto get() const -> const T &
     {
-        if (const auto *p = std::get_if<T>(&inner))
+        if (const auto *p = std::get_if<T>(&inner)) {
             return *p;
+        }
         throw std::runtime_error(errors::type_mismatch);
     }
 
     template <typename T>
     auto get_optional() const -> std::optional<T>
     {
-        if (const auto *p = std::get_if<T>(&inner))
+        if (const auto *p = std::get_if<T>(&inner)) {
             return *p;
+        }
         return std::nullopt;
     }
 };
@@ -141,8 +142,7 @@ export using Json = std::variant<Object, Array>;
 
 // ---- Safe Extraction View ----
 
-export struct View
-{
+export struct View {
     const Value *v_ptr = nullptr;
     const Json *j_ptr = nullptr;
 
@@ -167,15 +167,17 @@ export struct View
         if (v_ptr) {
             if (const auto *obj = std::get_if<Object>(&v_ptr->inner)) {
                 for (const auto &pair : *obj) {
-                    if (pair.first == key)
+                    if (pair.first == key) {
                         return View(&pair.second);
+                    }
                 }
             }
         } else if (j_ptr) {
             if (const auto *obj = std::get_if<Object>(j_ptr)) {
                 for (const auto &pair : *obj) {
-                    if (pair.first == key)
+                    if (pair.first == key) {
                         return View(&pair.second);
+                    }
                 }
             }
         }
@@ -186,13 +188,15 @@ export struct View
     {
         if (v_ptr) {
             if (const auto *arr = std::get_if<Array>(&v_ptr->inner)) {
-                if (index < arr->size())
+                if (index < arr->size()) {
                     return View(&(*arr)[index]);
+                }
             }
         } else if (j_ptr) {
             if (const auto *arr = std::get_if<Array>(j_ptr)) {
-                if (index < arr->size())
+                if (index < arr->size()) {
                     return View(&(*arr)[index]);
+                }
             }
         }
         return View();
@@ -213,8 +217,9 @@ export struct View
     auto as() const -> std::optional<T>
     {
         if (v_ptr) {
-            if (const auto *val = std::get_if<T>(&v_ptr->inner))
+            if (const auto *val = std::get_if<T>(&v_ptr->inner)) {
                 return *val;
+            }
         }
         return std::nullopt;
     }
@@ -241,11 +246,13 @@ export struct View
     template <typename T>
     auto get() const -> T
     {
-        if (!is_valid())
+        if (!is_valid()) {
             throw std::runtime_error(errors::invalid_view);
+        }
         if (v_ptr) {
-            if (const auto *val = std::get_if<T>(&v_ptr->inner))
+            if (const auto *val = std::get_if<T>(&v_ptr->inner)) {
                 return *val;
+            }
             throw std::runtime_error(errors::type_mismatch);
         }
         throw std::runtime_error(errors::type_mismatch);
@@ -270,8 +277,7 @@ constexpr inline int nul_idx = 5;
 
 enum class Precision_mode { shortest, sig_figs, decimal_places };
 
-struct Format_spec
-{
+struct Format_spec {
     int precision = -1;
     Precision_mode precision_mode = Precision_mode::shortest;
     int indent_size = 4;
@@ -327,30 +333,14 @@ void format_value(const Value &v, const Format_spec &spec, int level, std::strin
 std::string format_json(const Json &json, const Format_spec &spec);
 std::string format_value_root(const Value &v, const Format_spec &spec);
 
-struct Frame
-{
+struct Frame {
     Json container;
     std::string pending_key{};
 };
 
-enum class Token_type {
-    obj_open,
-    obj_close,
-    arr_open,
-    arr_close,
-    colon,
-    comma,
-    string_val,
-    number_val,
-    bool_true,
-    bool_false,
-    null_val,
-    eof,
-    error
-};
+enum class Token_type { obj_open, obj_close, arr_open, arr_close, colon, comma, string_val, number_val, bool_true, bool_false, null_val, eof, error };
 
-struct Token
-{
+struct Token {
     Token_type type;
     std::string_view value;
 };
@@ -409,8 +399,7 @@ concept Iterable_c = requires(T t) {
 export template <Iterable_c T>
 void to_json(Context &ctx, const T &container);
 
-struct Context
-{
+struct Context {
     Json root{};
     std::vector<detail::Frame> stack{};
 
@@ -439,19 +428,21 @@ struct Context
         using Decayed_t = std::decay_t<T>;
 
         if constexpr (Compatible_c<Decayed_t>) {
-            if (is_in_object())
+            if (is_in_object()) {
                 return obj_v(val);
-            else if (is_in_array())
+            } else if (is_in_array()) {
                 return arr_v(val);
-            else
+            } else {
                 throw std::runtime_error(errors::no_active_container);
+            }
         } else if constexpr (std::is_integral_v<Decayed_t> && !std::is_same_v<Decayed_t, bool>) {
-            if (is_in_object())
+            if (is_in_object()) {
                 return obj_v(static_cast<double>(val));
-            else if (is_in_array())
+            } else if (is_in_array()) {
                 return arr_v(static_cast<double>(val));
-            else
+            } else {
                 throw std::runtime_error(errors::no_active_container);
+            }
         } else {
             to_json(*this, val);
             return *this;
@@ -468,8 +459,9 @@ template <Iterable_c T>
 void to_json(Context &ctx, const T &container)
 {
     ctx.arr_b();
-    for (const auto &item : container)
+    for (const auto &item : container) {
         ctx.inject(item);
+    }
     ctx.arr_e();
 }
 
@@ -478,8 +470,7 @@ void to_json(Context &ctx, const T &container)
 // ---- std::formatter Specializations ----
 
 export template <>
-struct std::formatter<rio::jsn::Value>
-{
+struct std::formatter<rio::jsn::Value> {
     rio::jsn::detail::Format_spec spec;
 
     constexpr auto parse(std::format_parse_context &ctx)
@@ -494,8 +485,7 @@ struct std::formatter<rio::jsn::Value>
 };
 
 export template <>
-struct std::formatter<rio::jsn::Json>
-{
+struct std::formatter<rio::jsn::Json> {
     rio::jsn::detail::Format_spec spec;
 
     constexpr auto parse(std::format_parse_context &ctx)
@@ -517,8 +507,9 @@ namespace rio::jsn::detail {
 
 void make_indent(const Format_spec &spec, int level, std::string &out)
 {
-    if (spec.indent_size > 0)
+    if (spec.indent_size > 0) {
         out.append(spec.indent_size * level, ' ');
+    }
 }
 
 void escape_to(std::string_view s, std::string &out)
@@ -548,10 +539,11 @@ void escape_to(std::string_view s, std::string &out)
 
 void maybe_escape_to(std::string_view s, const Format_spec &spec, std::string &out)
 {
-    if (!spec.escape_str)
+    if (!spec.escape_str) {
         out += s;
-    else
+    } else {
         escape_to(s, out);
+    }
 }
 
 void format_double(double v, const Format_spec &spec, std::string &out)
@@ -571,8 +563,9 @@ void format_double(double v, const Format_spec &spec, std::string &out)
 
     if (spec.precision_mode != Precision_mode::decimal_places) {
         std::string_view added(out.data() + start_len, out.size() - start_len);
-        if (added.find('.') == std::string_view::npos && added.find('e') == std::string_view::npos)
+        if (added.find('.') == std::string_view::npos && added.find('e') == std::string_view::npos) {
             out += ".0";
+        }
     }
 }
 
@@ -591,11 +584,13 @@ void format_object(const Object &obj, const Format_spec &spec, int level, std::s
         out += (spec.indent_size > 0) ? "\": " : "\":";
         format_value(obj[i].second, spec, level, out);
 
-        if (i + 1 < obj.size())
+        if (i + 1 < obj.size()) {
             out += ',';
+        }
 
-        if (spec.indent_size > 0)
+        if (spec.indent_size > 0) {
             out += '\n';
+        }
     }
     make_indent(spec, level - 1, out);
     out += '}';
@@ -613,11 +608,13 @@ void format_array(const Array &arr, const Format_spec &spec, int level, std::str
         make_indent(spec, level, out);
         format_value(arr[i], spec, level, out);
 
-        if (i + 1 < arr.size())
+        if (i + 1 < arr.size()) {
             out += ',';
+        }
 
-        if (spec.indent_size > 0)
+        if (spec.indent_size > 0) {
             out += '\n';
+        }
     }
     make_indent(spec, level - 1, out);
     out += ']';
@@ -657,10 +654,11 @@ std::string format_json(const Json &json, const Format_spec &spec)
     std::visit(
         [&](const auto &v) {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, Object>)
+            if constexpr (std::is_same_v<T, Object>) {
                 format_object(v, spec, 1, out);
-            else
+            } else {
                 format_array(v, spec, 1, out);
+            }
         },
         json);
     return out;
@@ -695,10 +693,12 @@ auto Scanner::parse_string(std::size_t start) -> Token
 {
     while (pos < src.size()) {
         char c = advance();
-        if (c == '"')
+        if (c == '"') {
             return {Token_type::string_val, src.substr(start, pos - start)};
-        if (c == '\\' && pos < src.size())
+        }
+        if (c == '\\' && pos < src.size()) {
             advance();
+        }
     }
     return {Token_type::error, src.substr(start)};
 }
@@ -718,23 +718,28 @@ auto Scanner::parse_number(std::size_t start) -> Token
 
 auto Scanner::parse_literal(std::size_t start) -> Token
 {
-    while (pos < src.size() && std::isalpha(static_cast<unsigned char>(peek())))
+    while (pos < src.size() && std::isalpha(static_cast<unsigned char>(peek()))) {
         advance();
+    }
     std::string_view val = src.substr(start, pos - start);
-    if (val == "true")
+    if (val == "true") {
         return {Token_type::bool_true, val};
-    if (val == "false")
+    }
+    if (val == "false") {
         return {Token_type::bool_false, val};
-    if (val == "null")
+    }
+    if (val == "null") {
         return {Token_type::null_val, val};
+    }
     return {Token_type::error, val};
 }
 
 auto Scanner::next() -> Token
 {
     skip_whitespace();
-    if (pos >= src.size())
+    if (pos >= src.size()) {
         return {Token_type::eof, ""};
+    }
 
     const std::size_t start = pos;
     const char c = advance();
@@ -755,10 +760,12 @@ auto Scanner::next() -> Token
     case '"':
         return parse_string(start);
     default:
-        if (c == '-' || std::isdigit(static_cast<unsigned char>(c)))
+        if (c == '-' || std::isdigit(static_cast<unsigned char>(c))) {
             return parse_number(start);
-        if (std::isalpha(static_cast<unsigned char>(c)))
+        }
+        if (std::isalpha(static_cast<unsigned char>(c))) {
             return parse_literal(start);
+        }
         return {Token_type::error, src.substr(start, 1)};
     }
 }
@@ -844,22 +851,25 @@ auto Parser::parse_object() -> Object
     Object obj;
     advance();
     while (current_token.type != Token_type::obj_close) {
-        if (current_token.type != Token_type::string_val)
+        if (current_token.type != Token_type::string_val) {
             throw std::runtime_error(errors::parse_expected_key);
+        }
         std::string key = unescape_string(current_token.value);
         advance();
 
-        if (current_token.type != Token_type::colon)
+        if (current_token.type != Token_type::colon) {
             throw std::runtime_error(errors::parse_expected_colon);
+        }
         advance();
 
         Value val = parse_value();
         obj.emplace_back(std::move(key), std::move(val));
 
-        if (current_token.type == Token_type::comma)
+        if (current_token.type == Token_type::comma) {
             advance();
-        else if (current_token.type != Token_type::obj_close)
+        } else if (current_token.type != Token_type::obj_close) {
             throw std::runtime_error(errors::parse_unexpected_tok);
+        }
     }
     advance();
     return obj;
@@ -871,10 +881,11 @@ auto Parser::parse_array() -> Array
     advance();
     while (current_token.type != Token_type::arr_close) {
         arr.push_back(parse_value());
-        if (current_token.type == Token_type::comma)
+        if (current_token.type == Token_type::comma) {
             advance();
-        else if (current_token.type != Token_type::arr_close)
+        } else if (current_token.type != Token_type::arr_close) {
             throw std::runtime_error(errors::parse_unexpected_tok);
+        }
     }
     advance();
     return arr;
@@ -882,12 +893,13 @@ auto Parser::parse_array() -> Array
 
 auto Parser::parse() -> Json
 {
-    if (current_token.type == Token_type::obj_open)
+    if (current_token.type == Token_type::obj_open) {
         return parse_object();
-    else if (current_token.type == Token_type::arr_open)
+    } else if (current_token.type == Token_type::arr_open) {
         return parse_array();
-    else
+    } else {
         throw std::runtime_error(errors::parse_expected_root);
+    }
 }
 
 } // namespace rio::jsn::detail
@@ -914,35 +926,40 @@ auto Context::arr_b() -> Context &
 
 auto Context::obj_e() -> Context &
 {
-    if (stack.empty() || !std::holds_alternative<Object>(stack.back().container))
+    if (stack.empty() || !std::holds_alternative<Object>(stack.back().container)) {
         throw std::runtime_error(errors::mismatched_obj_end);
+    }
     close_container();
     return *this;
 }
 
 auto Context::arr_e() -> Context &
 {
-    if (stack.empty() || !std::holds_alternative<Array>(stack.back().container))
+    if (stack.empty() || !std::holds_alternative<Array>(stack.back().container)) {
         throw std::runtime_error(errors::mismatched_arr_end);
+    }
     close_container();
     return *this;
 }
 
 auto Context::obj_k(const std::string &k) -> Context &
 {
-    if (stack.empty() || !std::holds_alternative<Object>(stack.back().container))
+    if (stack.empty() || !std::holds_alternative<Object>(stack.back().container)) {
         throw std::runtime_error(errors::no_active_obj_for_key);
+    }
     stack.back().pending_key = k;
     return *this;
 }
 
 auto Context::obj_v(Value v) -> Context &
 {
-    if (stack.empty() || !std::holds_alternative<Object>(stack.back().container))
+    if (stack.empty() || !std::holds_alternative<Object>(stack.back().container)) {
         throw std::runtime_error(errors::no_active_obj_for_val);
+    }
 
-    if (stack.back().pending_key.empty())
+    if (stack.back().pending_key.empty()) {
         throw std::runtime_error(errors::missing_key);
+    }
 
     std::get<Object>(stack.back().container).push_back({std::move(stack.back().pending_key), std::move(v)});
     stack.back().pending_key.clear();
@@ -956,8 +973,9 @@ auto Context::obj_kv(const std::string &k, Value v) -> Context &
 
 auto Context::arr_v(Value v) -> Context &
 {
-    if (stack.empty() || !std::holds_alternative<Array>(stack.back().container))
+    if (stack.empty() || !std::holds_alternative<Array>(stack.back().container)) {
         throw std::runtime_error(errors::no_active_arr_for_val);
+    }
 
     std::get<Array>(stack.back().container).push_back(std::move(v));
     return *this;
@@ -975,8 +993,9 @@ auto Context::is_in_array() const -> bool
 
 auto Context::get() -> Json
 {
-    if (!stack.empty())
+    if (!stack.empty()) {
         throw std::runtime_error(errors::unclosed_containers);
+    }
     return root;
 }
 
@@ -989,13 +1008,12 @@ auto Context::close_container() -> void
         root = std::move(completed_container);
     } else {
 
-        Value nested_value = std::visit([](auto &&arg) -> Value {
-            return Value(std::forward<decltype(arg)>(arg));
-        }, std::move(completed_container));
+        Value nested_value = std::visit([](auto &&arg) -> Value { return Value(std::forward<decltype(arg)>(arg)); }, std::move(completed_container));
 
         if (std::holds_alternative<Object>(stack.back().container)) {
-            if (stack.back().pending_key.empty())
+            if (stack.back().pending_key.empty()) {
                 throw std::runtime_error(errors::missing_key_nested);
+            }
 
             std::get<Object>(stack.back().container).emplace_back(std::move(stack.back().pending_key), std::move(nested_value));
             stack.back().pending_key.clear();

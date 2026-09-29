@@ -8,8 +8,7 @@ namespace rio::mem {
 template <typename T>
 class rc_ptr
 {
-    struct __control_block_t__
-    {
+    struct __control_block_t__ {
         T *ptr;
         std::size_t ref_count;
         void (*deleter)(T *); // function pointer to delete logic
@@ -21,8 +20,9 @@ class rc_ptr
 
         ~__control_block_t__()
         {
-            if (ptr)
+            if (ptr) {
                 deleter(ptr);
+            }
         }
     };
 
@@ -39,8 +39,9 @@ public:
 
     rc_ptr(const rc_ptr &other) noexcept : ctrl(other.ctrl)
     {
-        if (ctrl)
+        if (ctrl) {
             ++ctrl->ref_count;
+        }
     }
 
     rc_ptr(rc_ptr &&other) noexcept : ctrl(other.ctrl)
@@ -54,8 +55,9 @@ public:
         if (this != &other) {
             release();
             ctrl = other.ctrl;
-            if (ctrl)
+            if (ctrl) {
                 ++ctrl->ref_count;
+            }
         }
         return *this;
     }
@@ -121,8 +123,9 @@ public:
             ctrl = nullptr;
         }
 
-        if (new_ptr)
+        if (new_ptr) {
             ctrl = new __control_block_t__(new_ptr, [](T *p) { delete p; });
+        }
     }
 
 private:
@@ -138,8 +141,7 @@ private:
 template <typename T>
 class rc_ptr<T[]>
 {
-    struct _control_block_
-    {
+    struct _control_block_ {
         T *ptr;
         std::size_t ref_count;
         std::size_t sz;
@@ -150,8 +152,9 @@ class rc_ptr<T[]>
 
         ~_control_block_()
         {
-            if (ptr)
+            if (ptr) {
                 deleter(ptr);
+            }
         }
     };
 
@@ -166,8 +169,9 @@ public:
 
     rc_ptr(const rc_ptr &other) noexcept : ctrl(other.ctrl)
     {
-        if (ctrl)
+        if (ctrl) {
             ++ctrl->ref_count;
+        }
     }
 
     rc_ptr(rc_ptr &&other) noexcept : ctrl(other.ctrl)
@@ -181,8 +185,9 @@ public:
         if (this != &other) {
             release();
             ctrl = other.ctrl;
-            if (ctrl)
+            if (ctrl) {
                 ++ctrl->ref_count;
+            }
         }
         return *this;
     }

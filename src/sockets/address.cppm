@@ -13,8 +13,7 @@ namespace rio {
 
 using namespace std::string_view_literals;
 
-export struct address
-{
+export struct address {
     union storage_t {
         sockaddr general;
         sockaddr_in v4;
@@ -41,8 +40,9 @@ export struct address
         std::string given_ip(ip);
         std::string ip_str = (given_ip == "localhost"sv) ? "127.0.0.1" : given_ip;
 
-        if (::inet_pton(AF_INET, ip_str.c_str(), &addr.storage.v4.sin_addr) != 1) [[unlikely]]
+        if (::inet_pton(AF_INET, ip_str.c_str(), &addr.storage.v4.sin_addr) != 1) [[unlikely]] {
             return std::unexpected(Err{EINVAL, std::format("Invalid IPv4 address: '{}'", ip)});
+        }
 
         return addr;
     }
@@ -83,8 +83,9 @@ export struct address
         std::string given_ip(ip);
         std::string ip_str = (given_ip == "localhost") ? "::1" : given_ip;
 
-        if (::inet_pton(AF_INET6, ip_str.c_str(), &addr.storage.v6.sin6_addr) != 1) [[unlikely]]
+        if (::inet_pton(AF_INET6, ip_str.c_str(), &addr.storage.v6.sin6_addr) != 1) [[unlikely]] {
             return std::unexpected(Err{EINVAL, std::format("Invalid IPv6 address: '{}'", ip)});
+        }
 
         return addr;
     }
@@ -118,8 +119,9 @@ export struct address
         std::string given_ip(ip);
 
         // Handle "localhost" - default to IPv4 for compatibility
-        if (given_ip == "localhost")
+        if (given_ip == "localhost") {
             return from_ipv4("127.0.0.1", port);
+        }
 
         // Try IPv4 first (more common, faster)
         address addr;
@@ -166,10 +168,12 @@ export struct address
     [[nodiscard]]
     auto port() const -> uint16_t
     {
-        if (is_ipv4())
+        if (is_ipv4()) {
             return ntohs(storage.v4.sin_port);
-        if (is_ipv6())
+        }
+        if (is_ipv6()) {
             return ntohs(storage.v6.sin6_port);
+        }
         return 0;
     }
 
@@ -181,14 +185,16 @@ export struct address
         char buf[INET6_ADDRSTRLEN];
 
         if (is_ipv4()) {
-            if (!::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf)))
+            if (!::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf))) {
                 return "";
+            }
             return std::format("{}:{}", buf, ntohs(storage.v4.sin_port));
         }
 
         if (is_ipv6()) {
-            if (!::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf)))
+            if (!::inet_ntop(AF_INET, &storage.v4.sin_addr, buf, sizeof(buf))) {
                 return "";
+            }
             return std::format("[{}]:{}", buf, ntohs(storage.v6.sin6_port));
         }
 
@@ -218,8 +224,7 @@ export struct address
 } // namespace rio
 
 template <>
-struct std::formatter<rio::address> : std::formatter<std::string>
-{
+struct std::formatter<rio::address> : std::formatter<std::string> {
     auto format(const rio::address &addr, std::format_context &ctx) const
     {
         return std::formatter<std::string>::format(addr.to_string(), ctx);

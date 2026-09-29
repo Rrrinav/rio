@@ -21,8 +21,7 @@ namespace buff {
 /// specialized this struct for your custom stream types (e.g. sockets, files).
 /// By default, it calls `s.read(dest, max)`.
 template <typename Stream>
-struct stream_traits
-{
+struct stream_traits {
     /// \brief Reads up to `max` bytes from `s` into `dest`.
     /// \return Number of bytes read, or std::nullopt on error/EOF signal.
     static std::optional<std::size_t> read(Stream &s, std::uint8_t *dest, std::size_t max)
@@ -50,8 +49,9 @@ namespace detail {
 template <typename T>
 constexpr T apply_endian(T val, std::endian target_endian) noexcept
 {
-    if (target_endian == std::endian::native)
+    if (target_endian == std::endian::native) {
         return val;
+    }
 
     auto bytes = std::bit_cast<std::array<std::byte, sizeof(T)>>(val);
 
@@ -67,11 +67,11 @@ constexpr T apply_endian(T val, std::endian target_endian) noexcept
 
 // Internal policy to handle stack vs heap buffer allocation
 export template <std::size_t N>
-struct Storage_policy
-{
+struct Storage_policy {
     alignas(std::max_align_t) std::byte data_[N];
 
-    Storage_policy(std::size_t) noexcept {}
+    Storage_policy(std::size_t) noexcept
+    {}
 
     std::uint8_t *start() noexcept
     {
@@ -85,8 +85,7 @@ struct Storage_policy
 };
 
 export template <>
-struct Storage_policy<0>
-{
+struct Storage_policy<0> {
     std::vector<std::uint8_t> data_;
     explicit Storage_policy(std::size_t n) : data_(n)
     {}
@@ -106,8 +105,9 @@ void skip_whitespace(Reader &reader)
     while (true) {
         auto view = reader.peek();
 
-        if (view.empty())
+        if (view.empty()) {
             return;
+        }
 
         std::size_t i = 0;
 
@@ -130,15 +130,15 @@ inline bool is_stopper(unsigned char c)
 
 /// \brief Trait for loading binary data. Specialize this for custom types.
 export template <typename T>
-struct load_traits
-{
+struct load_traits {
     template <typename Reader>
     static std::expected<void, std::errc> load(Reader &r, T &out, std::endian endian = std::endian::native)
     {
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::size_t n = r.read(&out, sizeof(T));
-            if (n != sizeof(T))
+            if (n != sizeof(T)) {
                 return std::unexpected(std::errc::bad_message);
+            }
 
             if constexpr (std::is_arithmetic_v<T> || std::is_enum_v<T>) {
                 out = detail::apply_endian(out, endian);
@@ -153,8 +153,7 @@ struct load_traits
 
 /// \brief Trait for parsing text data. Specialize this for custom types.
 export template <typename T>
-struct parse_traits
-{
+struct parse_traits {
     template <typename Reader>
     static std::expected<T, std::errc> parse(Reader &)
     {
@@ -167,15 +166,15 @@ struct parse_traits
 /// Uses std::from_chars for high-performance, locale-independent parsing.
 template <typename T>
     requires std::is_arithmetic_v<T>
-struct parse_traits<T>
-{
+struct parse_traits<T> {
     template <typename Reader>
     static std::expected<T, std::errc> parse(Reader &reader)
     {
         detail::skip_whitespace(reader);
         auto view = reader.peek();
-        if (view.empty())
+        if (view.empty()) {
             return std::unexpected(std::errc::invalid_argument); // Unexpected EOF
+        }
 
         const char *begin = reinterpret_cast<const char *>(view.data());
         const char *end = begin + view.size();
@@ -201,18 +200,21 @@ struct parse_traits<T>
 
         while (len < MAX_LEN - 1) {
             auto chunk = reader.peek();
-            if (chunk.empty())
+            if (chunk.empty()) {
                 break;
+            }
             const char *ptr = reinterpret_cast<const char *>(chunk.data());
-            if (detail::is_stopper(static_cast<unsigned char>(*ptr)))
+            if (detail::is_stopper(static_cast<unsigned char>(*ptr))) {
                 break;
+            }
             buf[len++] = *ptr;
             reader.advance(1);
         }
 
         auto res2 = std::from_chars(buf.data(), buf.data() + len, value);
-        if (res2.ec == std::errc())
+        if (res2.ec == std::errc()) {
             return value;
+        }
 
         return std::unexpected(std::errc::result_out_of_range);
     }
@@ -220,8 +222,7 @@ struct parse_traits<T>
 
 /// \brief Specialization for std::string parsing.
 template <>
-struct parse_traits<std::string>
-{
+struct parse_traits<std::string> {
     template <typename Reader>
     static std::expected<std::string, std::errc> parse(Reader &reader)
     {
@@ -232,8 +233,9 @@ struct parse_traits<std::string>
 
         while (true) {
             auto view = reader.peek();
-            if (view.empty())
+            if (view.empty()) {
                 break;
+            }
 
             const char *ptr = reinterpret_cast<const char *>(view.data());
             std::size_t i = 0;
@@ -253,8 +255,9 @@ struct parse_traits<std::string>
                 content_found = true;
             }
 
-            if (found_stop)
+            if (found_stop) {
                 break;
+            }
         }
 
         if (!content_found && result.empty()) {
@@ -268,8 +271,7 @@ struct parse_traits<std::string>
 
 /// \brief A simple wrapper to treat a std::string as a readable stream.
 /// Useful for testing Buffered_reader logic without disk I/O.
-export struct String_source
-{
+export struct String_source {
     std::string content;
     std::size_t pos = 0;
 
@@ -282,12 +284,12 @@ export struct String_source
 
 /// \brief Teach Buffered_reader how to read from String_source.
 template <>
-struct stream_traits<String_source>
-{
+struct stream_traits<String_source> {
     static std::optional<std::size_t> read(String_source &s, std::uint8_t *dest, std::size_t max)
     {
-        if (s.pos >= s.content.size())
+        if (s.pos >= s.content.size()) {
             return std::nullopt; // EOF
+        }
 
         std::size_t available = s.content.size() - s.pos;
         std::size_t count = std::min(available, max);
@@ -300,8 +302,7 @@ struct stream_traits<String_source>
 
 /// \brief A non-owning stream wrapper around a raw memory buffer.
 /// ideal for parsing string literals, vectors, or mmap'd regions.
-export struct Memory_source
-{
+export struct Memory_source {
     std::span<const std::uint8_t> data;
     std::size_t pos = 0;
 
@@ -320,12 +321,12 @@ export struct Memory_source
 
 /// \brief Teach Buffered_reader how to read from Memory_source.
 template <>
-struct stream_traits<Memory_source>
-{
+struct stream_traits<Memory_source> {
     static std::optional<std::size_t> read(Memory_source &s, std::uint8_t *dest, std::size_t max)
     {
-        if (s.pos >= s.data.size())
+        if (s.pos >= s.data.size()) {
             return std::nullopt; // EOF
+        }
 
         std::size_t available = s.data.size() - s.pos;
         std::size_t count = std::min(available, max);
@@ -372,8 +373,9 @@ public:
     [[nodiscard]] view_type peek()
     {
         if (cursor_ >= valid_bytes_) {
-            if (refill() == 0)
+            if (refill() == 0) {
                 return {};
+            }
         }
         return {buffer_.start() + cursor_, valid_bytes_ - cursor_};
     }
@@ -401,8 +403,9 @@ public:
             // Bypass buffer for large reads if buffer is empty
             if (remaining() == 0 && count >= buffer_.capacity()) {
                 auto res = buff::stream_traits<Stream>::read(stream_, out, count);
-                if (!res || *res == 0)
+                if (!res || *res == 0) {
                     break;
+                }
                 total_read += *res;
                 out += *res;
                 count -= *res;
@@ -410,8 +413,9 @@ public:
             }
 
             view_type chunk = peek();
-            if (chunk.empty())
+            if (chunk.empty()) {
                 break;
+            }
 
             size_type to_copy = std::min(count, chunk.size());
             std::memcpy(out, chunk.data(), to_copy);
@@ -433,8 +437,9 @@ public:
     std::optional<value_type> read_byte_opt()
     {
         value_type val{};
-        if (this->read(&val, 1) != 1)
+        if (this->read(&val, 1) != 1) {
             return std::nullopt;
+        }
         return val;
     }
 
@@ -455,8 +460,9 @@ public:
 
         auto n = this->read(out.data(), count);
 
-        if (n == 0)
+        if (n == 0) {
             return std::nullopt;
+        }
 
         out.resize(n);
         return out;
@@ -474,14 +480,16 @@ private:
     size_type refill()
     {
         size_type bytes_left = remaining();
-        if (bytes_left > 0 && cursor_ > 0)
+        if (bytes_left > 0 && cursor_ > 0) {
             std::memmove(buffer_.start(), buffer_.start() + cursor_, bytes_left);
+        }
         valid_bytes_ = bytes_left;
         cursor_ = 0;
 
         size_type available = buffer_.capacity() - valid_bytes_;
-        if (available == 0)
+        if (available == 0) {
             return 0;
+        }
 
         auto res = buff::stream_traits<Stream>::read(stream_, buffer_.start() + valid_bytes_, available);
         if (res) {
@@ -538,13 +546,15 @@ std::size_t read_till(Reader &reader, char delimiter, std::span<char> out)
 
     while (true) {
         // 1. Check if we ran out of space
-        if (total_written >= out.size())
+        if (total_written >= out.size()) {
             return total_written;
+        }
 
         // 2. Peek at data
         auto view = reader.peek();
-        if (view.empty())
+        if (view.empty()) {
             return total_written;
+        }
 
         // 3. Search for delimiter in the current chunk
         const void *match = std::memchr(view.data(), delimiter, view.size());
@@ -600,8 +610,9 @@ export template <typename T, typename Reader>
 {
     T value;
     auto res = buff::load_traits<T>::load(reader, value, endian);
-    if (!res)
+    if (!res) {
         return std::unexpected(res.error());
+    }
     return value;
 }
 

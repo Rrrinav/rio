@@ -10,27 +10,23 @@ namespace rio {
 
 namespace internals {
 
-export struct uring_request_header
-{
+export struct uring_request_header {
     void (*call)(uring_request_header *self, int res);
 };
 
 }; // namespace internals
 
-export struct context
-{
+export struct context {
     io_uring ring{};
     static constexpr std::size_t pool_alignment = alignof(std::max_align_t);
     static constexpr std::uint32_t dynamic_bucket = static_cast<std::uint32_t>(-1);
 
-    struct alignas(pool_alignment) pool_node
-    {
+    struct alignas(pool_alignment) pool_node {
         pool_node *next;
         std::uint32_t bucket_index;
     };
 
-    struct pool_bucket
-    {
+    struct pool_bucket {
         std::size_t payload_size{};
         std::size_t stride{};
         std::size_t blocks_per_slab{};
@@ -40,14 +36,12 @@ export struct context
 
     static constexpr std::array<std::size_t, 5> bucket_sizes{128, 256, 512, 1024, 2048};
 
-    struct tombstone
-    {
+    struct tombstone {
         void *ptr;
         void (*destroy)(void *);
     };
 
-    struct cancel_entry
-    {
+    struct cancel_entry {
         std::chrono::steady_clock::time_point deadline;
         void *target;
     };
@@ -89,12 +83,8 @@ export struct context
     context &operator=(const context &) = delete;
 
     context(context &&other) noexcept
-        : ring(other.ring)
-        , graveyard(std::move(other.graveyard))
-        , cancellations_(std::move(other.cancellations_))
-        , op_buckets_(std::move(other.op_buckets_))
-        , has_pending_submit_(other.has_pending_submit_)
-        , queued_sqes_(other.queued_sqes_)
+        : ring(other.ring), graveyard(std::move(other.graveyard)), cancellations_(std::move(other.cancellations_)),
+          op_buckets_(std::move(other.op_buckets_)), has_pending_submit_(other.has_pending_submit_), queued_sqes_(other.queued_sqes_)
     {
         other.ring.ring_fd = -1;
         other.has_pending_submit_ = false;

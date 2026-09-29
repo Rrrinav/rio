@@ -16,65 +16,69 @@ namespace rio::fut {
 
 using Open_req = Basic_op<rio::file<rio::file_state::open>, std::string>;
 
-struct Open_req_impl : Open_req
-{
+struct Open_req_impl : Open_req {
     using Open_req::Open_req;
 
     static void finish(Open_req_impl *self, std::error_code ec)
     {
         self->state.reject(ec);
         self->io_done = true;
-        if (self->future_dropped)
+        if (self->future_dropped) {
             self->ctx->recycle(self);
+        }
     }
 
     static void finish(Open_req_impl *self, rio::file<rio::file_state::open> f)
     {
         self->state.resolve(std::move(f));
         self->io_done = true;
-        if (self->future_dropped)
+        if (self->future_dropped) {
             self->ctx->recycle(self);
+        }
     }
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Open_req_impl *>(ptr);
-        if (res < 0)
+        if (res < 0) {
             finish(self, std::error_code(-res, std::system_category()));
-        else
+        } else {
             finish(self, rio::file<rio::file_state::open>::attach(res));
+        }
     }
 };
 
 using Sync_req = Basic_op<void>;
 
-struct Sync_req_impl : Sync_req
-{
+struct Sync_req_impl : Sync_req {
     using Sync_req::Sync_req;
 
     static void finish(Sync_req_impl *self, std::error_code ec)
     {
         self->state.reject(ec);
         self->io_done = true;
-        if (self->future_dropped)
+        if (self->future_dropped) {
             self->ctx->recycle(self);
+        }
     }
 
     static void finish(Sync_req_impl *self)
     {
         self->state.resolve();
         self->io_done = true;
-        if (self->future_dropped)
+        if (self->future_dropped) {
             self->ctx->recycle(self);
+        }
     }
 
     static void on_complete(rio::internals::uring_request_header *ptr, int res)
     {
         auto *self = reinterpret_cast<Sync_req_impl *>(ptr);
-        if (res < 0)
+        if (res < 0) {
             finish(self, std::error_code(-res, std::system_category()));
-        else
+        } else {
             finish(self);
+        }
     }
 };
 

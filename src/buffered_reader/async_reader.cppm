@@ -14,8 +14,7 @@ import :fut.io;
 namespace rio {
 
 template <typename Stream>
-struct async_stream_traits
-{
+struct async_stream_traits {
     static auto read(rio::context &ctx, Stream &s, std::span<char> buffer)
     {
         return rio::fut::read(ctx, s, buffer);
@@ -34,8 +33,7 @@ class Async_buffered_reader;
 namespace detail {
 
 template <typename Reader>
-struct Peek_op_impl
-{
+struct Peek_op_impl {
     Reader *reader;
 
     using Read_fut = decltype(async_stream_traits<typename Reader::stream_type>::read(
@@ -47,9 +45,10 @@ struct Peek_op_impl
     {
         while (true) {
             // 1. Check if we have data
-            if (reader->cursor_ < reader->valid_bytes_)
+            if (reader->cursor_ < reader->valid_bytes_) {
                 return rio::fut::res<typename Reader::view_type>::ready(
                     {reader->buffer_.start() + reader->cursor_, reader->valid_bytes_ - reader->cursor_});
+            }
 
             // 2. Buffer empty. Need to refill.
             if (!pending_read) {
@@ -68,18 +67,21 @@ struct Peek_op_impl
             // 3. Poll underlying IO
             auto r = pending_read->poll();
 
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<typename Reader::view_type>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<typename Reader::view_type>::error(r.err);
+            }
 
             // 4. IO Complete
             size_t n = *r.value;
             pending_read.reset(); // Clear future
 
             // EOF: Return empty view
-            if (n == 0)
+            if (n == 0) {
                 return rio::fut::res<typename Reader::view_type>::ready({});
+            }
 
             reader->valid_bytes_ = n;
             // Loop back to Step 1 to return the view
@@ -88,20 +90,21 @@ struct Peek_op_impl
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Peek_op_impl &t, std::chrono::steady_clock::time_point d)
     {
-        if (t.pending_read)
+        if (t.pending_read) {
             rio::cancel_after(*t.pending_read, d);
+        }
     }
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Peek_op_impl &t)
     {
-        if (t.pending_read)
+        if (t.pending_read) {
             rio::cancel(*t.pending_read);
+        }
     }
 };
 
 template <typename Reader>
-struct Read_till_op_impl
-{
+struct Read_till_op_impl {
     using value_type = std::string;
     using result_type = rio::fut::res<std::optional<value_type>>;
     Reader *reader;
@@ -118,19 +121,22 @@ struct Read_till_op_impl
             // 1. Get View (Async Peek)
             auto r = peek_state.poll();
 
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<std::optional<std::string>>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<std::optional<std::string>>::error(r.err);
+            }
 
             auto view = *r.value;
 
             // 2. Handle EOF
             if (view.empty()) {
-                if (result.empty())
+                if (result.empty()) {
                     return rio::fut::res<std::optional<std::string>>::ready(std::nullopt); // Pure EOF
-                else
+                } else {
                     return rio::fut::res<std::optional<std::string>>::ready(std::move(result)); // EOF with partial data
+                }
             }
 
             // 3. Scan for delimiter
@@ -165,8 +171,7 @@ struct Read_till_op_impl
 };
 
 template <typename T, typename Reader>
-struct Load_op
-{
+struct Load_op {
     Reader *reader;
     Peek_op_impl<Reader> peek_state;
 
@@ -187,16 +192,19 @@ struct Load_op
             // 1. Get View
             auto r = peek_state.poll();
 
-            if (r.state == rio::fut::status::pending)
+            if (r.state == rio::fut::status::pending) {
                 return rio::fut::res<T>::pending();
-            if (r.state == rio::fut::status::error)
+            }
+            if (r.state == rio::fut::status::error) {
                 return rio::fut::res<T>::error(r.err);
+            }
 
             auto view = *r.value;
 
             // 2. Handle EOF
-            if (view.empty())
+            if (view.empty()) {
                 return rio::fut::res<T>::error(std::make_error_code(std::errc::bad_message));
+            }
 
             // 3. Copy what we can
             size_t needed = sizeof(T) - bytes_copied;

@@ -9,16 +9,16 @@ import :utils.json;
 namespace rio::http::v1_1 {
 
 export enum class status_code : std::uint16_t {
-    ok                    = 200,
-    created               = 201,
-    no_content            = 204,
-    bad_request           = 400,
-    unauthorized          = 401,
-    forbidden             = 403,
-    not_found             = 404,
-    method_not_allowed    = 405,
+    ok = 200,
+    created = 201,
+    no_content = 204,
+    bad_request = 400,
+    unauthorized = 401,
+    forbidden = 403,
+    not_found = 404,
+    method_not_allowed = 405,
     internal_server_error = 500,
-    not_implemented       = 501,
+    not_implemented = 501,
 };
 
 export constexpr std::string_view reason_phrase(status_code c) noexcept
@@ -49,8 +49,7 @@ export constexpr std::string_view reason_phrase(status_code c) noexcept
     }
 }
 
-export struct response
-{
+export struct response {
     status_code code{status_code::ok};
     std::vector<std::pair<std::string, std::string>> headers{};
     std::string body{};
@@ -77,13 +76,15 @@ export struct response
         bool has_content_length = false;
         for (const auto &[n, v] : headers) {
             std::format_to(std::back_inserter(out), "{}: {}\r\n", n, v);
-            if (n == "Content-Length")
+            if (n == "Content-Length") {
                 has_content_length = true;
+            }
         }
 
         // Inject Content-Length if absent
-        if (!has_content_length)
+        if (!has_content_length) {
             std::format_to(std::back_inserter(out), "Content-Length: {}\r\n", body.size());
+        }
 
         // Header / body separator
         out.append("\r\n", 2);

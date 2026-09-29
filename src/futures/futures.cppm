@@ -10,8 +10,7 @@ namespace fut {
 export enum class status : ::uint8_t { pending, error, ready };
 
 export template <typename T>
-struct res
-{
+struct res {
     using value_type = T;
     status state;
     std::optional<T> value = std::nullopt;
@@ -35,8 +34,7 @@ struct res
 };
 
 export template <>
-struct res<void>
-{
+struct res<void> {
     using value_type = void;
     status state;
     std::error_code err = {};
@@ -63,8 +61,7 @@ namespace tag_invoke_impl {
 // If compiler finds this during resolution, then the thing you are trying to poll is not a valid future.
 void tag_invoke();
 
-export struct poll_t
-{
+export struct poll_t {
     template <typename T>
         requires requires(T &&t) { tag_invoke(std::declval<const poll_t &>(), std::forward<T>(t)); }
     constexpr auto operator()(T &&t) const -> decltype(tag_invoke(*this, std::forward<T>(t)))
@@ -73,8 +70,7 @@ export struct poll_t
     }
 };
 
-export struct cancel_after_t
-{
+export struct cancel_after_t {
     template <typename T>
         requires requires(T &t, std::chrono::steady_clock::time_point d) { tag_invoke(std::declval<const cancel_after_t &>(), t, d); }
     constexpr void operator()(T &t, std::chrono::steady_clock::time_point d) const
@@ -83,8 +79,7 @@ export struct cancel_after_t
     }
 };
 
-export struct cancel_t
-{
+export struct cancel_t {
     template <typename T>
         requires requires(T &t) { tag_invoke(std::declval<const cancel_t &>(), t); }
     constexpr void operator()(T &t) const
@@ -104,11 +99,9 @@ using tag_invoke_impl::cancel_t;
 export inline constexpr cancel_t cancel{};
 
 template <typename T>
-struct is_poll_res : std::false_type
-{};
+struct is_poll_res : std::false_type {};
 template <typename T>
-struct is_poll_res<fut::res<T>> : std::true_type
-{};
+struct is_poll_res<fut::res<T>> : std::true_type {};
 
 export template <typename F>
 concept Pollable = requires(F &f) {
@@ -124,21 +117,19 @@ concept Pollable_same_value = Pollable<F> && std::is_same_v<typename F::value_ty
 
 namespace fut {
 
-export struct Call_poll
-{
+export struct Call_poll {
     template <typename T>
-    requires requires(T& ref) { ref.poll(); }
+        requires requires(T &ref) { ref.poll(); }
     auto operator()(T &t) const
     {
-        static_assert(requires(T& ref) { ref.poll(); }, "You must have `.poll()` function.");
+        static_assert(requires(T &ref) { ref.poll(); }, "You must have `.poll()` function.");
         return t.poll();
     }
 };
 
-export struct Call_poll_ptr
-{
+export struct Call_poll_ptr {
     template <typename T>
-    requires requires(T& ref) { ref->poll(); }
+        requires requires(T &ref) { ref->poll(); }
     auto operator()(T &t) const
     {
         return t->poll();
@@ -166,8 +157,7 @@ struct Loop_impl;
 } // namespace fut
 
 export template <typename State, typename Poll_fn = rio::fut::Call_poll>
-struct Future
-{
+struct Future {
     using state_type = State;
     using value_type = typename std::invoke_result_t<Poll_fn &, State &>::value_type;
 
@@ -176,15 +166,14 @@ struct Future
         "\n"
         "  Future must own its State. References are not allowed.\n"
         "  Though it may be fine for a lot of cases, so you can comment this out and compile again, if you need it anyhow.\n"
-        "  Sorry"
-    );
+        "  Sorry");
 
-    static_assert(std::invocable<Poll_fn &, State &>,
+    static_assert(
+        std::invocable<Poll_fn &, State &>,
         "\n"
         "  The provided State is not compatible with the Poll mechanism.\n"
         "  Ensure your state has a `poll()` method that takes NO arguments,\n"
-        "  and returns a `rio::fut::res<T>`.\n"
-    );
+        "  and returns a `rio::fut::res<T>`.\n");
 
     static_assert(!std::same_as<std::decay_t<State>, Future>, "State can't be future type itself");
 
@@ -229,14 +218,16 @@ struct Future
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_t, Future &f)
     {
-        if constexpr (requires { rio::cancel(f.data); })
+        if constexpr (requires { rio::cancel(f.data); }) {
             rio::cancel(f.data);
+        }
     }
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Future &f, std::chrono::steady_clock::time_point d)
     {
-        if constexpr (requires { rio::cancel_after(f.data, d); })
+        if constexpr (requires { rio::cancel_after(f.data, d); }) {
             rio::cancel_after(f.data, d);
+        }
     }
 
     template <typename Fn>
@@ -262,13 +253,11 @@ Future(State, PollFn) -> Future<State, PollFn>;
 
 namespace detail {
 template <typename Fn, typename Input>
-struct next_fut_t
-{
+struct next_fut_t {
     using type = std::invoke_result_t<Fn &, Input>;
 };
 template <typename Fn>
-struct next_fut_t<Fn, void>
-{
+struct next_fut_t<Fn, void> {
     using type = std::invoke_result_t<Fn &>;
 };
 } // namespace detail
@@ -276,8 +265,7 @@ struct next_fut_t<Fn, void>
 namespace fut {
 
 export template <Pollable Fut, typename Fn>
-struct Then_impl
-{
+struct Then_impl {
     using input_type = typename Fut::value_type;
     using next_future_type = typename detail::next_fut_t<Fn, input_type>::type;
     using value_type = typename next_future_type::value_type;
@@ -304,25 +292,29 @@ struct Then_impl
 
     fut::res<value_type> poll()
     {
-        if (phase == Phase::Done)
+        if (phase == Phase::Done) {
             return fut::res<value_type>::error(std::make_error_code(std::errc::operation_not_permitted));
+        }
         if (phase == Phase::First) {
             auto r = rio::poll(first_fut);
-            if (r.state == fut::status::pending)
+            if (r.state == fut::status::pending) {
                 return fut::res<value_type>::pending();
+            }
             if (r.state == fut::status::error) {
                 phase = Phase::Done;
                 return fut::res<value_type>::error(r.err);
             }
-            if constexpr (std::is_void_v<input_type>)
+            if constexpr (std::is_void_v<input_type>) {
                 next.emplace(fn());
-            else
+            } else {
                 next.emplace(fn(std::move(*r.value)));
+            }
             phase = Phase::Next;
         }
         auto r = rio::poll(*next);
-        if (r.state != fut::status::pending)
+        if (r.state != fut::status::pending) {
             phase = Phase::Done;
+        }
         return r;
     }
     friend auto tag_invoke(poll_t, Then_impl &t)
@@ -342,8 +334,7 @@ export template <Pollable Fut, typename Fn>
 Then_impl(Fut, Fn) -> Then_impl<Fut, Fn>;
 
 export template <Pollable Fut, typename Fn>
-struct Map_impl
-{
+struct Map_impl {
     using input_type = typename Fut::value_type;
 
     static_assert(!std::is_void_v<input_type>, "Map cannot be used on void Futures. Use .then() instead.");
@@ -370,11 +361,13 @@ struct Map_impl
     {
         auto r = rio::poll(fut);
 
-        if (r.state == fut::status::pending)
+        if (r.state == fut::status::pending) {
             return fut::res<value_type>::pending();
+        }
 
-        if (r.state == fut::status::error)
+        if (r.state == fut::status::error) {
             return fut::res<value_type>::error(r.err);
+        }
 
         if constexpr (std::is_void_v<input_type>) {
             if constexpr (std::is_void_v<value_type>) {
@@ -407,15 +400,13 @@ export template <Pollable Fut, typename Fn>
 Map_impl(Fut, Fn) -> Map_impl<Fut, Fn>;
 
 export template <Pollable Fut, typename Fn>
-struct Or_else_impl
-{
+struct Or_else_impl {
     using value_type = typename Fut::value_type;
     using next_future_type = std::invoke_result_t<Fn, std::error_code>;
 
     static_assert(
         Pollable<next_future_type> && std::is_same_v<typename next_future_type::value_type, value_type>,
-        "or_else recovery function must return a Future with the same value_type"
-    );
+        "or_else recovery function must return a Future with the same value_type");
 
     Fut first_fut;
     Fn fn;
@@ -441,22 +432,25 @@ struct Or_else_impl
 
     fut::res<value_type> poll()
     {
-        if (phase == Phase::Done)
+        if (phase == Phase::Done) {
             return fut::res<value_type>::error(std::make_error_code(std::errc::operation_not_permitted));
+        }
 
         if (phase == Phase::First) {
             auto r = rio::poll(first_fut);
 
             if (r.state == fut::status::ready) {
                 phase = Phase::Done;
-                if constexpr (std::is_void_v<value_type>)
+                if constexpr (std::is_void_v<value_type>) {
                     return fut::res<void>::ready();
-                else
+                } else {
                     return fut::res<value_type>::ready(std::move(*r.value));
+                }
             }
 
-            if (r.state == fut::status::pending)
+            if (r.state == fut::status::pending) {
                 return fut::res<value_type>::pending();
+            }
 
             if (r.state == fut::status::error) {
                 recovery.emplace(fn(r.err));
@@ -465,8 +459,9 @@ struct Or_else_impl
         }
 
         auto r = rio::poll(*recovery);
-        if (r.state != fut::status::pending)
+        if (r.state != fut::status::pending) {
             phase = Phase::Done;
+        }
         return r;
     }
     friend auto tag_invoke(poll_t, Or_else_impl &o)
@@ -486,18 +481,15 @@ export template <Pollable Fut, typename Fn>
 Or_else_impl(Fut, Fn) -> Or_else_impl<Fut, Fn>;
 
 export template <Pollable Fut, typename Fn>
-struct Catch_exception_impl
-{
+struct Catch_exception_impl {
     using value_type = typename Fut::value_type;
     using handler_result = std::invoke_result_t<Fn, std::exception_ptr>;
 
     static_assert(
-        Pollable_same_value<handler_result, value_type>
-            || (std::is_void_v<handler_result> && std::is_void_v<value_type>)
+        Pollable_same_value<handler_result, value_type> || (std::is_void_v<handler_result> && std::is_void_v<value_type>)
             || (std::is_same_v<handler_result, value_type> && !std::is_void_v<value_type>),
         "catch_exception handler must return: (1) a Future with the same value_type, "
-        "(2) the value_type itself, or (3) void to swallow the exception (only allowed on void chains)"
-    );
+        "(2) the value_type itself, or (3) void to swallow the exception (only allowed on void chains)");
 
     Fut first_fut;
     Fn fn;
@@ -523,8 +515,9 @@ struct Catch_exception_impl
 
     fut::res<value_type> poll()
     {
-        if (phase == Phase::Done)
+        if (phase == Phase::Done) {
             return fut::res<value_type>::error(std::make_error_code(std::errc::operation_not_permitted));
+        }
 
         if (phase == Phase::First) {
             try {
@@ -532,14 +525,16 @@ struct Catch_exception_impl
 
                 if (r.state == fut::status::ready) {
                     phase = Phase::Done;
-                    if constexpr (std::is_void_v<value_type>)
+                    if constexpr (std::is_void_v<value_type>) {
                         return fut::res<void>::ready();
-                    else
+                    } else {
                         return fut::res<value_type>::ready(std::move(*r.value));
+                    }
                 }
 
-                if (r.state == fut::status::pending)
+                if (r.state == fut::status::pending) {
                     return fut::res<value_type>::pending();
+                }
 
                 phase = Phase::Done;
                 return r;
@@ -561,8 +556,9 @@ struct Catch_exception_impl
 
         if constexpr (Pollable<handler_result>) {
             auto r = rio::poll(*recovery);
-            if (r.state != fut::status::pending)
+            if (r.state != fut::status::pending) {
                 phase = Phase::Done;
+            }
             return r;
         }
         phase = Phase::Done;
@@ -585,8 +581,7 @@ export template <Pollable Fut, typename Fn>
 Catch_exception_impl(Fut, Fn) -> Catch_exception_impl<Fut, Fn>;
 
 export template <typename State, typename Body_fn>
-struct Loop_impl
-{
+struct Loop_impl {
     using value_type = void;
     using inner_future_type = std::invoke_result_t<Body_fn &, State &>;
     using function_type = Body_fn;
@@ -615,15 +610,19 @@ struct Loop_impl
     fut::res<void> poll()
     {
         while (true) {
-            if (!curr_fut)
+            if (!curr_fut) {
                 curr_fut.emplace(body_fn(data));
+            }
             auto r = rio::poll(*curr_fut);
-            if (r.state == fut::status::pending)
+            if (r.state == fut::status::pending) {
                 return fut::res<void>::pending();
-            if (r.state == fut::status::error)
+            }
+            if (r.state == fut::status::error) {
                 return fut::res<void>::error(r.err);
-            if constexpr (!std::is_void_v<typename inner_future_type::value_type>)
+            }
+            if constexpr (!std::is_void_v<typename inner_future_type::value_type>) {
                 data = std::move(*r.value);
+            }
             curr_fut.reset();
         }
     }
@@ -636,8 +635,7 @@ export template <typename State, typename BodyFn>
 Loop_impl(State, BodyFn) -> Loop_impl<State, BodyFn>;
 
 export template <typename Fut>
-struct Timeout_impl
-{
+struct Timeout_impl {
     using value_type = typename Fut::value_type;
     using future_type = Fut;
     Fut fut;
@@ -649,19 +647,22 @@ struct Timeout_impl
     {
         // If the inner state supports cancellation, arm a real kernel-side
         // cancel at the deadline instead of relying on clock checks in poll().
-        if constexpr (requires { rio::cancel_after(fut.data, deadline); })
+        if constexpr (requires { rio::cancel_after(fut.data, deadline); }) {
             rio::cancel_after(fut.data, deadline);
+        }
     }
     Timeout_impl(Timeout_impl &&) noexcept = default;
     Timeout_impl &operator=(Timeout_impl &&) noexcept = default;
 
     fut::res<value_type> poll()
     {
-        if (timed_out)
+        if (timed_out) {
             return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));
+        }
         auto r = rio::poll(fut);
-        if (r.state == fut::status::ready)
+        if (r.state == fut::status::ready) {
             return r;
+        }
         if (r.state == fut::status::error) {
             if (kernel_cancelled && r.err == std::errc::operation_canceled) {
                 timed_out = true;
@@ -669,8 +670,9 @@ struct Timeout_impl
             }
             return r;
         }
-        if (kernel_cancelled)
+        if (kernel_cancelled) {
             return fut::res<value_type>::pending();
+        }
         if (std::chrono::steady_clock::now() >= deadline) {
             timed_out = true;
             return fut::res<value_type>::error(std::make_error_code(std::errc::timed_out));
@@ -686,8 +688,7 @@ export template <typename F>
 Timeout_impl(F, std::chrono::steady_clock::time_point) -> Timeout_impl<F>;
 
 export template <typename F, typename Callback, typename Recovery_fut>
-struct Timeout_with_impl
-{
+struct Timeout_with_impl {
     using value_type = typename F::value_type;
     using first_future_type = F;
     using callback_type = Callback;
@@ -697,29 +698,32 @@ struct Timeout_with_impl
     enum class Phase : uint8_t { Normal, Recovery, Done } phase = Phase::Normal;
     std::optional<Recovery_fut> recovery_fut{};
 
-    Timeout_with_impl(F f, std::chrono::steady_clock::time_point t, Callback c)
-        : first_fut(std::move(f)), deadline(t), callback(std::move(c))
+    Timeout_with_impl(F f, std::chrono::steady_clock::time_point t, Callback c) : first_fut(std::move(f)), deadline(t), callback(std::move(c))
     {}
     Timeout_with_impl(Timeout_with_impl &&) noexcept = default;
     Timeout_with_impl &operator=(Timeout_with_impl &&) noexcept = default;
 
     fut::res<value_type> poll()
     {
-        if (phase == Phase::Done)
+        if (phase == Phase::Done) {
             return fut::res<value_type>::error(std::make_error_code(std::errc::operation_not_permitted));
+        }
         if (phase == Phase::Normal) {
             auto r = rio::poll(first_fut);
-            if (r.state != fut::status::pending)
+            if (r.state != fut::status::pending) {
                 return r;
+            }
             if (std::chrono::steady_clock::now() >= deadline) {
                 recovery_fut.emplace(callback(std::move(first_fut.data)));
                 phase = Phase::Recovery;
-            } else
+            } else {
                 return fut::res<value_type>::pending();
+            }
         }
         auto r = rio::poll(*recovery_fut);
-        if (r.state != fut::status::pending)
+        if (r.state != fut::status::pending) {
             phase = Phase::Done;
+        }
         return r;
     }
     friend auto tag_invoke(poll_t, Timeout_with_impl &t)
@@ -728,17 +732,14 @@ struct Timeout_with_impl
     }
 };
 export template <typename F, typename C>
-Timeout_with_impl(F, std::chrono::steady_clock::time_point, C)
-    -> Timeout_with_impl<F, C, std::invoke_result_t<C &, typename F::state_type &&>>;
+Timeout_with_impl(F, std::chrono::steady_clock::time_point, C) -> Timeout_with_impl<F, C, std::invoke_result_t<C &, typename F::state_type &&>>;
 
-struct Monostate
-{};
+struct Monostate {};
 template <typename T>
 using non_void_t = std::conditional_t<std::is_void_v<T>, Monostate, T>;
 
 export template <typename Fut1, typename Fut2>
-struct Both_impl
-{
+struct Both_impl {
     Fut1 fut1;
     Fut2 fut2;
 
@@ -777,32 +778,37 @@ struct Both_impl
 
         if (!r1) {
             auto res = rio::poll(fut1);
-            if (res.state == rio::fut::status::ready)
-                if constexpr (std::is_void_v<value_type1>)
+            if (res.state == rio::fut::status::ready) {
+                if constexpr (std::is_void_v<value_type1>) {
                     r1.emplace(Monostate{});
-                else
+                } else {
                     r1.emplace(std::move(*res.value));
-            else if (res.state == rio::fut::status::error)
+                }
+            } else if (res.state == rio::fut::status::error) {
                 return rio::fut::res<value_type>::error(res.err);
-            else
+            } else {
                 pending = true;
+            }
         }
 
         if (!r2) {
             auto res = rio::poll(fut2);
-            if (res.state == rio::fut::status::ready)
-                if constexpr (std::is_void_v<value_type2>)
+            if (res.state == rio::fut::status::ready) {
+                if constexpr (std::is_void_v<value_type2>) {
                     r2.emplace(Monostate{});
-                else
+                } else {
                     r2.emplace(std::move(*res.value));
-            else if (res.state == rio::fut::status::error)
+                }
+            } else if (res.state == rio::fut::status::error) {
                 return rio::fut::res<value_type>::error(res.err);
-            else
+            } else {
                 pending = true;
+            }
         }
 
-        if (pending)
+        if (pending) {
             return rio::fut::res<value_type>::pending();
+        }
 
         return rio::fut::res<value_type>::ready(std::make_pair(std::move(*r1), std::move(*r2)));
     }
@@ -816,8 +822,7 @@ export template <typename F1, typename F2>
 Both_impl(F1, F2) -> Both_impl<F1, F2>;
 
 export template <typename Container, typename Poll_fn>
-struct For_all
-{
+struct For_all {
     using State = typename Container::value_type;
     using Res = std::invoke_result_t<Poll_fn &, State &>;
     using Val = typename Res::value_type;
@@ -854,34 +859,38 @@ struct For_all
 
     auto poll() -> rio::fut::res<std::vector<Val>>
     {
-        auto active_tasks = std::views::zip(states, results)
-            | std::views::filter([](const auto &pair) { return !std::get<1>(pair).has_value(); });
+        auto active_tasks = std::views::zip(states, results) | std::views::filter([](const auto &pair) { return !std::get<1>(pair).has_value(); });
 
         bool pending = false;
 
         for (auto &&[state, res_opt] : active_tasks) {
             auto r = fn(state);
 
-            if (r.state != rio::fut::status::pending)
+            if (r.state != rio::fut::status::pending) {
                 res_opt.emplace(std::move(r));
-            else
+            } else {
                 pending = true;
+            }
         }
 
-        if (pending)
+        if (pending) {
             return rio::fut::res<std::vector<Val>>::pending();
+        }
 
-        for (auto &r : results)
-            if (r->state == rio::fut::status::error)
+        for (auto &r : results) {
+            if (r->state == rio::fut::status::error) {
                 return rio::fut::res<std::vector<Val>>::error(r->err);
+            }
+        }
 
-        if constexpr (std::is_void_v<Val>)
+        if constexpr (std::is_void_v<Val>) {
             return rio::fut::res<std::vector<Val>>::ready();
-        else {
+        } else {
             std::vector<Val> final_vec;
             final_vec.reserve(results.size());
-            for (auto &r : results)
+            for (auto &r : results) {
                 final_vec.push_back(std::move(*r->value));
+            }
             return rio::fut::res<std::vector<Val>>::ready(std::move(final_vec));
         }
     }
@@ -904,8 +913,7 @@ auto for_all(Container &&c, Poll_fn &&f)
 }
 
 export template <typename... Futs>
-struct Join_impl
-{
+struct Join_impl {
     std::tuple<Futs...> futures;
 
     using value_type = std::tuple<typename Futs::value_type...>;
@@ -922,15 +930,17 @@ struct Join_impl
         std::error_code ec;
 
         auto process = [&](auto &fut, auto &res_opt) {
-            if (res_opt.has_value())
+            if (res_opt.has_value()) {
                 return;
+            }
 
             auto r = rio::poll(fut);
             if (r.state == rio::fut::status::ready) {
-                if constexpr (std::is_void_v<typename std::decay_t<decltype(fut)>::value_type>)
+                if constexpr (std::is_void_v<typename std::decay_t<decltype(fut)>::value_type>) {
                     res_opt.emplace(rio::fut::res<void>::ready());
-                else
+                } else {
                     res_opt.emplace(std::move(*r.value));
+                }
             } else if (r.state == rio::fut::status::error) {
                 error = true;
                 ec = r.err;
@@ -941,14 +951,14 @@ struct Join_impl
 
         std::apply([&](auto &...f_args) { std::apply([&](auto &...r_args) { (process(f_args, r_args), ...); }, results); }, futures);
 
-        if (error)
+        if (error) {
             return rio::fut::res<value_type>::error(ec);
-        if (pending)
+        }
+        if (pending) {
             return rio::fut::res<value_type>::pending();
+        }
 
-        return std::apply(
-            [&](auto &...r_args) { return rio::fut::res<value_type>::ready(std::make_tuple(std::move(*r_args)...)); },
-            results);
+        return std::apply([&](auto &...r_args) { return rio::fut::res<value_type>::ready(std::make_tuple(std::move(*r_args)...)); }, results);
     }
 
     friend auto tag_invoke(rio::tag_invoke_impl::poll_t, Join_impl &j)
@@ -968,12 +978,10 @@ auto join(Futs &&...futs)
 }
 
 export template <typename... Futs>
-struct First_of_impl
-{
+struct First_of_impl {
     std::tuple<Futs...> futures;
 
-    using value_type =
-        std::variant<std::conditional_t<std::is_void_v<typename Futs::value_type>, std::monostate, typename Futs::value_type>...>;
+    using value_type = std::variant<std::conditional_t<std::is_void_v<typename Futs::value_type>, std::monostate, typename Futs::value_type>...>;
 
     First_of_impl(Futs... f) : futures(std::move(f)...)
     {}
@@ -983,16 +991,18 @@ struct First_of_impl
         std::optional<rio::fut::res<value_type>> winner;
 
         auto process = [&]<std::size_t I>(auto &fut) {
-            if (winner)
+            if (winner) {
                 return;
+            }
 
             auto r = rio::poll(fut);
 
             if (r.state == rio::fut::status::ready) {
-                if constexpr (std::is_void_v<typename std::decay_t<decltype(fut)>::value_type>)
+                if constexpr (std::is_void_v<typename std::decay_t<decltype(fut)>::value_type>) {
                     winner.emplace(rio::fut::res<value_type>::ready(value_type(std::in_place_index<I>)));
-                else
+                } else {
                     winner.emplace(rio::fut::res<value_type>::ready(value_type(std::in_place_index<I>, std::move(*r.value))));
+                }
             } else if (r.state == rio::fut::status::error) {
                 winner.emplace(rio::fut::res<value_type>::error(r.err));
             }
@@ -1002,8 +1012,9 @@ struct First_of_impl
             (process.template operator()<Is>(std::get<Is>(futures)), ...);
         }(std::make_index_sequence<sizeof...(Futs)>{});
 
-        if (winner)
+        if (winner) {
             return std::move(*winner);
+        }
         return rio::fut::res<value_type>::pending();
     }
 
@@ -1045,16 +1056,16 @@ auto make_ptr_state(State &&s)
 }
 
 export template <typename T>
-struct Immediate_impl
-{
+struct Immediate_impl {
     using value_type = T;
     std::optional<T> val{std::nullopt};
     std::error_code err{};
 
     res<T> poll()
     {
-        if (err)
+        if (err) {
             return res<T>::error(err);
+        }
         return res<T>::ready(std::move(*val));
     }
 
@@ -1082,16 +1093,16 @@ export template <typename T>
 using error_t = Future<Immediate_impl<T>, Call_poll>;
 
 export template <>
-struct Immediate_impl<void>
-{
+struct Immediate_impl<void> {
     using value_type = void;
     bool is_ready = false;
     std::error_code err{};
 
     res<void> poll()
     {
-        if (err)
+        if (err) {
             return res<void>::error(err);
+        }
         // If constructed via ready(), implies success
         return res<void>::ready();
     }
@@ -1123,7 +1134,7 @@ auto both(Fut1 &&f1, Fut2 &&f2)
 } // namespace fut
 
 template <typename S, typename P>
-    //requires std::invocable<P&, S&>
+// requires std::invocable<P&, S&>
 template <typename Fn>
 auto Future<S, P>::then(Fn &&fn) &&
 {

@@ -11,10 +11,8 @@ namespace rio::fut {
 namespace detail {
 
 template <typename T>
-struct task_erasure
-{
-    struct vtable
-    {
+struct task_erasure {
+    struct vtable {
         rio::fut::res<T> (*poll)(void *state);
         void (*destroy)(void *state) noexcept;
         void (*move_construct)(void *dst, void *src) noexcept;
@@ -23,8 +21,7 @@ struct task_erasure
     };
 
     template <typename Fut>
-    struct model
-    {
+    struct model {
         static rio::fut::res<T> do_poll(void *state)
         {
             return rio::poll(*static_cast<Fut *>(state));
@@ -53,8 +50,7 @@ struct task_erasure
 } // namespace detail
 
 export template <typename T>
-struct Task
-{
+struct Task {
     using value_type = T;
 
     static constexpr std::size_t inline_capacity = 512;
@@ -103,8 +99,9 @@ struct Task
 
     rio::fut::res<T> poll()
     {
-        if (!vt_)
+        if (!vt_) {
             return rio::fut::res<T>::error(std::make_error_code(std::errc::operation_canceled));
+        }
         return vt_->poll(heap_ ? heap_ : storage_);
     }
 
@@ -137,8 +134,9 @@ private:
         heap_ = other.heap_;
 
         if (vt_) {
-            if (!heap_)
+            if (!heap_) {
                 vt_->move_construct(storage_, other.storage_);
+            }
 
             other.vt_ = nullptr;
             other.heap_ = nullptr;

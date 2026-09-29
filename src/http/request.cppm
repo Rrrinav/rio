@@ -7,11 +7,11 @@ import std;
 namespace rio::http::v1_1 {
 
 export enum class method : std::uint8_t {
-    get     = 0,
-    post    = 1,
-    put     = 2,
-    del     = 3,
-    patch   = 4,
+    get = 0,
+    post = 1,
+    put = 2,
+    del = 3,
+    patch = 4,
     options = 5,
     unknown = 6,
 };
@@ -38,15 +38,13 @@ export constexpr const char *method_to_str(method m) noexcept
     }
 }
 
-export struct header
-{
+export struct header {
     std::string name;
     std::string value;
 };
 
 export template <std::size_t InlineHeaders = 16>
-struct basic_request
-{
+struct basic_request {
     method method{method::unknown};
     std::string path{};
     std::string version{};
@@ -72,22 +70,29 @@ struct basic_request
     auto get_header(std::string_view key) const noexcept -> std::optional<std::string_view>
     {
         auto iequal = [](std::string_view a, std::string_view b) noexcept -> bool {
-            if (a.size() != b.size())
+            if (a.size() != b.size()) {
                 return false;
-            for (std::size_t i = 0; i < a.size(); ++i)
-                if ((a[i] | 0x20) != (b[i] | 0x20))
+            }
+            for (std::size_t i = 0; i < a.size(); ++i) {
+                if ((a[i] | 0x20) != (b[i] | 0x20)) {
                     return false;
+                }
+            }
             return true;
         };
 
         const auto n = std::min(header_count, InlineHeaders);
-        for (std::size_t i = 0; i < n; ++i)
-            if (iequal(inline_headers[i].name, key))
+        for (std::size_t i = 0; i < n; ++i) {
+            if (iequal(inline_headers[i].name, key)) {
                 return inline_headers[i].value;
+            }
+        }
 
-        for (const auto &h : extra_headers)
-            if (iequal(h.name, key))
+        for (const auto &h : extra_headers) {
+            if (iequal(h.name, key)) {
                 return h.value;
+            }
+        }
 
         return std::nullopt;
     }

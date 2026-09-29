@@ -13,14 +13,13 @@ namespace rio::http::v1_1 {
 //  Error category
 
 export enum class Parse_error : std::uint8_t {
-    invalid_request_line          = 1,
-    malformed_header              = 2,
-    content_length_mismatch       = 3,
+    invalid_request_line = 1,
+    malformed_header = 2,
+    content_length_mismatch = 3,
     unsupported_transfer_encoding = 4,
 };
 
-struct Http_error_category final : std::error_category
-{
+struct Http_error_category final : std::error_category {
     const char *name() const noexcept override
     {
         return "http_parse";
@@ -54,8 +53,7 @@ inline std::error_code make_error_code(Parse_error e) noexcept
 } // namespace rio::http::v1_1
 
 template <>
-struct std::is_error_code_enum<rio::http::v1_1::Parse_error> : std::true_type
-{};
+struct std::is_error_code_enum<rio::http::v1_1::Parse_error> : std::true_type {};
 
 namespace rio::http::v1_1 {
 
@@ -67,26 +65,32 @@ export constexpr auto parse_method(std::string_view m) noexcept -> method
 {
     switch (m.size()) {
     case 3:
-        if (m == "GET")
+        if (m == "GET") {
             return method::get;
-        if (m == "PUT")
+        }
+        if (m == "PUT") {
             return method::put;
+        }
         break;
     case 4:
-        if (m == "POST")
+        if (m == "POST") {
             return method::post;
+        }
         break;
     case 5:
-        if (m == "PATCH")
+        if (m == "PATCH") {
             return method::patch;
+        }
         break;
     case 6:
-        if (m == "DELETE")
+        if (m == "DELETE") {
             return method::del;
+        }
         break;
     case 7:
-        if (m == "OPTIONS")
+        if (m == "OPTIONS") {
             return method::options;
+        }
         break;
     }
     return method::unknown;
@@ -94,8 +98,7 @@ export constexpr auto parse_method(std::string_view m) noexcept -> method
 
 //  Parser state machine
 export template <typename Reader>
-struct Parse_request_impl
-{
+struct Parse_request_impl {
     Reader *reader;
     request *req;
 
@@ -116,39 +119,44 @@ struct Parse_request_impl
 
             //  REQUEST LINE / HEADERS
             if (state == Parse_state::request_line || state == Parse_state::headers) {
-                if (!curr_peek)
+                if (!curr_peek) {
                     curr_peek.emplace(reader->peek());
+                }
 
                 auto r = curr_peek->poll();
-                if (r.state == rio::fut::status::pending)
+                if (r.state == rio::fut::status::pending) {
                     return rio::fut::res<void>::pending();
-                if (r.state == rio::fut::status::error)
+                }
+                if (r.state == rio::fut::status::error) {
                     return rio::fut::res<void>::error(r.err);
+                }
 
                 const auto view = *r.value;
                 curr_peek.reset();
 
                 if (view.empty()) {
-                    if (line_scratch.empty())
+                    if (line_scratch.empty()) {
                         return rio::fut::res<void>::error(std::make_error_code(std::errc::connection_aborted));
+                    }
                 } else if (const void *match = std::memchr(view.data(), '\n', view.size())) {
                     const auto *match_ptr = static_cast<const std::uint8_t *>(match);
                     const auto line_len = static_cast<std::size_t>(match_ptr - view.data());
 
                     if (line_scratch.empty()) {
-                        const std::string_view line = rio::util::trim(
-                            std::string_view(reinterpret_cast<const char *>(view.data()), line_len));
+                        const std::string_view line = rio::util::trim(std::string_view(reinterpret_cast<const char *>(view.data()), line_len));
                         reader->advance(line_len + 1);
 
                         if (state == Parse_state::request_line) {
                             // Parse:  METHOD SP request-target SP HTTP-version
                             const auto sp1 = line.find(' ');
-                            if (sp1 == std::string_view::npos)
+                            if (sp1 == std::string_view::npos) {
                                 return rio::fut::res<void>::error(make_error_code(Parse_error::invalid_request_line));
+                            }
 
                             const auto sp2 = line.find(' ', sp1 + 1);
-                            if (sp2 == std::string_view::npos)
+                            if (sp2 == std::string_view::npos) {
                                 return rio::fut::res<void>::error(make_error_code(Parse_error::invalid_request_line));
+                            }
 
                             req->method = parse_method(line.substr(0, sp1));
                             req->path.assign(line.data() + sp1 + 1, sp2 - sp1 - 1);
@@ -196,12 +204,14 @@ struct Parse_request_impl
 
                 if (state == Parse_state::request_line) {
                     const auto sp1 = line.find(' ');
-                    if (sp1 == std::string_view::npos)
+                    if (sp1 == std::string_view::npos) {
                         return rio::fut::res<void>::error(make_error_code(Parse_error::invalid_request_line));
+                    }
 
                     const auto sp2 = line.find(' ', sp1 + 1);
-                    if (sp2 == std::string_view::npos)
+                    if (sp2 == std::string_view::npos) {
                         return rio::fut::res<void>::error(make_error_code(Parse_error::invalid_request_line));
+                    }
 
                     req->method = parse_method(line.substr(0, sp1));
                     req->path.assign(line.data() + sp1 + 1, sp2 - sp1 - 1);
@@ -245,20 +255,24 @@ struct Parse_request_impl
                     return rio::fut::res<void>::ready();
                 }
 
-                if (!curr_peek)
+                if (!curr_peek) {
                     curr_peek.emplace(reader->peek());
+                }
 
                 auto r = curr_peek->poll();
-                if (r.state == rio::fut::status::pending)
+                if (r.state == rio::fut::status::pending) {
                     return rio::fut::res<void>::pending();
-                if (r.state == rio::fut::status::error)
+                }
+                if (r.state == rio::fut::status::error) {
                     return rio::fut::res<void>::error(r.err);
+                }
 
                 const auto view = *r.value;
                 curr_peek.reset();
 
-                if (view.empty())
+                if (view.empty()) {
                     return rio::fut::res<void>::error(std::make_error_code(std::errc::connection_aborted));
+                }
 
                 const std::size_t needed = content_length - req->body.size();
                 const std::size_t take = std::min(needed, view.size());
