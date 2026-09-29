@@ -16,7 +16,9 @@ private:
     std::vector<rio::fut::Task<void>> pending_spawns_;
 
 public:
-    explicit Runtime(rio::context *c) : ctx_(c)
+    // Non-owning handle to the event loop; a reference (not a pointer)
+    // so a Runtime can never be built without a live context.
+    explicit Runtime(rio::context &c) : ctx_(&c)
     {
         active_tasks_.reserve(1024);
         pending_spawns_.reserve(128);

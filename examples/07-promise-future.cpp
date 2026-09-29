@@ -31,8 +31,9 @@ auto main() -> int
     auto *state = new rio::promise::State<std::string>{};
 
     // Then you bind that state to promise.
-    // Note: promise holds a raw pointer to the state.
-    rio::Promise pr{ .state = state };
+    // Note: promise holds a raw pointer to the state and is move-only:
+    // ownership of the (borrowed) state cannot be accidentally aliased.
+    rio::Promise pr{ state };
 
     // Then you bind that state to future and return the poll result for library state, you are free to do anything else
     // with it too, if you want, at the end of the day all you have to do is return a rio::fut::res but library `state`
@@ -45,7 +46,7 @@ auto main() -> int
     // An async function like emulation where this future reads one char per tick.
     // To make state error-ful, do `promise.reject(std::errc)`, to add value, do `promise.resolve(value)`;
     // If you did state-mangement properly, value/error will propagate to the future bound to promise/state.
-    rio::Future fut_read{ context{ "", pr, 0, false }, [](context &cont) -> rio::fut::res<void> {
+    rio::Future fut_read{ context{ "", std::move(pr), 0, false }, [](context &cont) -> rio::fut::res<void> {
                              if (cont.done)
                                  return rio::fut::res<void>::ready();
 

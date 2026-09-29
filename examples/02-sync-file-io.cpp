@@ -13,26 +13,28 @@ int main()
     std::string str;
 
     /*
-        rio::file is an abstraction over rio::handle(01-basic-io.cpp) that acts as a file handle
+        rio::file<S> is an abstraction over rio::handle(01-basic-io.cpp) that acts as a file handle.
+        The open/closed distinction lives in the type: only file<file_state::open>
+        can be read, written or stat'ed; close() consumes the handle and hands
+        back a file<file_state::closed> token. Use-after-close is a compile error.
 
-        methods:
-            1. static auto open(const char *path, f_mode flags = f_mode::read_only) -> result<file>;
+        methods (on file<file_state::open>):
+            1. static auto open(const char *path, f_mode flags = f_mode::read_only) -> result<file<file_state::open>>;
                 // Opens using permission: 0644 (-rw-r--r--)
-            2. static auto attach(int raw_fd) -> file;
+            2. static auto attach(int raw_fd) -> file<file_state::open>;
                 // basically file{rio::handle(raw_fd)}
-            3. auto detatch() -> int;
-                // returns fd and sets fd to -1;
-            4. explicit operator bool() const;
-                implicit bool conversion: returns fd < 0
+            3. auto detatch() && -> int;
+                // returns fd and disarms the destructor. Consumes the handle.
+            4. auto close() && -> file<file_state::closed>;
+                // closes the fd and hands back an empty token. Consumes the handle.
     */
     {
-        rio::file F;
-        if (auto res = rio::file::open(path.c_str()); !res) {
-            rio::io::write(err, std::format("{}\n", res.error()));
+        auto F_res = rio::file<rio::file_state::open>::open(path.c_str());
+        if (!F_res) {
+            rio::io::write(err, std::format("{}\n", F_res.error()));
             return 1;
-        } else {
-            F = std::move(res.value());
         }
+        auto F = std::move(*F_res);
 
         if (auto res = rio::io::read_all(F, str); !res) {
             rio::io::write(err, std::format("{}\n", res.error()));
@@ -42,12 +44,11 @@ int main()
         rio::io::write(out, str);
     }
     /*
-        Functions on file
-            export auto read(const rio::file &f, std::span<char> buf) -> result<std::size_t>
-            export auto read_str(const rio::file &f, std::string& str) -> result<void>
-            export auto write(const rio::file &f, std::span<const char> data) -> result<std::size_t>
+        Functions on open files
+            export auto read(const file<file_state::open> &f, std::span<char> buf) -> result<std::size_t>
+            export auto write(const file<file_state::open> &f, std::span<const char> data) -> result<std::size_t>
 
-        You can handle functions too just by using file.fd.
+        You can still reach the raw fd via f.native_handle().
      */
     {
         const std::string header = "// This was written by using this file only.\n";
@@ -61,15 +62,13 @@ int main()
         std::string temp_path = path + ".tmp";
 
         // Create temp file
-        rio::file tmp;
-        if (auto res = rio::file::open(temp_path.c_str(),
-                rio::f_mode::write | rio::f_mode::create | rio::f_mode::truncate);
-            !res) {
-            rio::io::write(err, std::format("{}\n", res.error()));
+        auto tmp_res = rio::file<rio::file_state::open>::open(temp_path.c_str(),
+            rio::f_mode::write | rio::f_mode::create | rio::f_mode::truncate);
+        if (!tmp_res) {
+            rio::io::write(err, std::format("{}\n", tmp_res.error()));
             return 1;
-        } else {
-            tmp = std::move(res.value());
         }
+        auto tmp = std::move(*tmp_res);
 
         if (auto res = rio::io::write(tmp, str); !res) {
             rio::io::write(err, std::format("Write error: {}\n", res.error()));
@@ -77,7 +76,7 @@ int main()
             return 1;
         }
 
-        ::fsync(tmp.fd);
+        ::fsync(tmp.native_handle());
 
         try {
             std::filesystem::rename(temp_path, path);
@@ -91,8 +90,8 @@ int main()
         if (dir.empty())
             dir = ".";
 
-        if (auto res = rio::file::open(dir.c_str()); res) {
-            ::fsync(res.value().fd);
+        if (auto res = rio::file<rio::file_state::open>::open(dir.c_str()); res) {
+            ::fsync(res->native_handle());
         }
 
         std::filesystem::remove(temp_path);

@@ -14,12 +14,16 @@ namespace rio::io {
 
 export template <typename T>
 concept Handle_like_c = requires(T t) {
-    { t.fd.native_handle() } -> std::convertible_to<int>;
+    { t.native_handle() } -> std::convertible_to<int>;
+    // Only readable states carry this tag (handle, file<open>,
+    // connected/bound sockets). Closed or not-yet-ready handles are
+    // rejected here, at compile time.
+    typename T::readable_tag;
 };
 
 constexpr inline int get_fd(const Handle_like_c auto &h)
 {
-    return h.fd.native_handle();
+    return h.native_handle();
 }
 constexpr inline int get_fd(int fd)
 {

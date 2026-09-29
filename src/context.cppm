@@ -89,9 +89,16 @@ export struct context
     context &operator=(const context &) = delete;
 
     context(context &&other) noexcept
+        : ring(other.ring)
+        , graveyard(std::move(other.graveyard))
+        , cancellations_(std::move(other.cancellations_))
+        , op_buckets_(std::move(other.op_buckets_))
+        , has_pending_submit_(other.has_pending_submit_)
+        , queued_sqes_(other.queued_sqes_)
     {
-        ring = other.ring;
         other.ring.ring_fd = -1;
+        other.has_pending_submit_ = false;
+        other.queued_sqes_ = 0;
     }
 
     context &operator=(context &&other) noexcept
@@ -100,9 +107,22 @@ export struct context
             if (ring.ring_fd >= 0) {
                 io_uring_queue_exit(&ring);
             }
+            for (auto &bucket : op_buckets_) {
+                for (void *slab : bucket.slabs) {
+                    ::operator delete(slab, std::align_val_t(pool_alignment));
+                }
+            }
 
             ring = other.ring;
+            graveyard = std::move(other.graveyard);
+            cancellations_ = std::move(other.cancellations_);
+            op_buckets_ = std::move(other.op_buckets_);
+            has_pending_submit_ = other.has_pending_submit_;
+            queued_sqes_ = other.queued_sqes_;
+
             other.ring.ring_fd = -1;
+            other.has_pending_submit_ = false;
+            other.queued_sqes_ = 0;
         }
         return *this;
     }

@@ -14,7 +14,7 @@ import :fut.io;
 
 namespace rio::fut {
 
-using Open_req = Basic_op<rio::file, std::string>;
+using Open_req = Basic_op<rio::file<rio::file_state::open>, std::string>;
 
 struct Open_req_impl : Open_req
 {
@@ -28,7 +28,7 @@ struct Open_req_impl : Open_req
             self->ctx->recycle(self);
     }
 
-    static void finish(Open_req_impl *self, rio::file f)
+    static void finish(Open_req_impl *self, rio::file<rio::file_state::open> f)
     {
         self->state.resolve(std::move(f));
         self->io_done = true;
@@ -42,7 +42,7 @@ struct Open_req_impl : Open_req
         if (res < 0)
             finish(self, std::error_code(-res, std::system_category()));
         else
-            finish(self, rio::file::attach(res));
+            finish(self, rio::file<rio::file_state::open>::attach(res));
     }
 };
 
@@ -89,25 +89,25 @@ export auto open_file(rio::context &ctx, std::string_view path, rio::f_mode flag
     return rio::Future(Async_handle<Open_req_impl>{req}, rio::fut::Call_poll{});
 }
 
-export auto sync(rio::context &ctx, rio::file &f)
+export auto sync(rio::context &ctx, rio::file<rio::file_state::open> &f)
 {
     auto *req = ctx.make_pooled<Sync_req_impl>(ctx);
     req->header.call = &Sync_req_impl::on_complete;
 
     auto *sqe = ctx.sqe();
-    io_uring_prep_fsync(sqe, f.fd.native_handle(), 0);
+    io_uring_prep_fsync(sqe, f.native_handle(), 0);
     io_uring_sqe_set_data(sqe, &req->header);
     return rio::Future(Async_handle<Sync_req_impl>{req}, rio::fut::Call_poll{});
 }
 
-export auto read_at(rio::context &ctx, rio::file &f, std::span<char> buf, size_t offset)
+export auto read_at(rio::context &ctx, rio::file<rio::file_state::open> &f, std::span<char> buf, size_t offset)
 {
-    return rio::fut::read(ctx, f.fd.native_handle(), buf, offset);
+    return rio::fut::read(ctx, f.native_handle(), buf, offset);
 }
 
-export auto write_at(rio::context &ctx, rio::file &f, std::span<const char> buf, size_t offset)
+export auto write_at(rio::context &ctx, rio::file<rio::file_state::open> &f, std::span<const char> buf, size_t offset)
 {
-    return rio::fut::write(ctx, f.fd.native_handle(), buf, offset);
+    return rio::fut::write(ctx, f.native_handle(), buf, offset);
 }
 
 } // namespace rio::fut

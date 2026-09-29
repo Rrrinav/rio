@@ -22,6 +22,15 @@ public:
     std::vector<entry> entries;
     std::vector<std::byte> arena;
 
+    // Entries hold pointers into our own arena: copying would double-run
+    // and double-destroy every deferred function. Move transfers the
+    // buffers, so pointers stay valid; copy is deleted.
+    Defer_stack() = default;
+    Defer_stack(const Defer_stack &) = delete;
+    Defer_stack &operator=(const Defer_stack &) = delete;
+    Defer_stack(Defer_stack &&) = default;
+    Defer_stack &operator=(Defer_stack &&) = default;
+
     ~Defer_stack()
     {
         for (auto it = entries.rbegin(); it != entries.rend(); ++it) {

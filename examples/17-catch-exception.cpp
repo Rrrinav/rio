@@ -17,11 +17,11 @@ struct Protocol_error : std::runtime_error
 struct Session
 {
     rio::context &ctx;
-    rio::Tcp_socket sock;
-    rio::Async_buffered_reader<rio::Tcp_socket> reader;
+    rio::Tcp_socket<rio::tcp_state::connected> sock;
+    rio::Async_buffered_reader<rio::Tcp_socket<rio::tcp_state::connected>> reader;
     std::string pending_reply{};
 
-    Session(rio::context &c, rio::Tcp_socket s) : ctx(c), sock(std::move(s)), reader(c, sock)
+    Session(rio::context &c, rio::Tcp_socket<rio::tcp_state::connected> s) : ctx(c), sock(std::move(s)), reader(c, sock)
     {}
 };
 
@@ -68,7 +68,7 @@ auto session_chain(std::shared_ptr<Session> s)
             }
             // the handler returns a NEW future: async teardown
             std::println("[server] teardown: shutdown + close");
-            return rio::fut::shutdown(s->ctx, s->sock, rio::Tcp_socket::shut::both)
+            return rio::fut::shutdown(s->ctx, s->sock, rio::tcp_shut::both)
                 .or_else([](std::error_code ec) {
                     std::println("[server] shutdown note: {}", ec.message());
                     return rio::fut::ready();
@@ -80,9 +80,9 @@ auto session_chain(std::shared_ptr<Session> s)
 int main()
 {
     rio::context IO{128};
-    rio::Runtime rt{&IO};
+    rio::Runtime rt{IO};
 
-    auto listen_res = rio::Tcp_socket::open_and_listen("127.0.0.1", 0, rio::s_opt::async_server_v4);
+    auto listen_res = rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("127.0.0.1", 0, rio::s_opt::async_server_v4);
     if (!listen_res) {
         std::println(std::cerr, "listen failed");
         return 1;
@@ -126,17 +126,18 @@ int main()
     //    The parser throws Protocol_error on garbage; the single catch at the
     //    bottom logs it and returns the async teardown chain as its recovery.
     {
-        auto client_res = rio::Tcp_socket::open(rio::s_opt::client_v4);
+        auto client_res = rio::Tcp_socket<rio::tcp_state::unbound>::open(rio::s_opt::client_v4);
         if (!client_res) {
             std::println(std::cerr, "client open failed");
             return 1;
         }
-        auto client = std::move(*client_res);
-        auto conn = rio::io::connect(client, addr);
+        auto unbound = std::move(*client_res);
+        auto conn = rio::io::connect(std::move(unbound), addr);
         if (!conn) {
             std::println(std::cerr, "connect failed: {}", conn.error().message());
             return 1;
         }
+        auto client = std::move(*conn);
 
         // server: accept once, run the session chain
         rt.spawn(

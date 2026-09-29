@@ -15,7 +15,12 @@ import :futures;
 namespace rio::fut {
 
 export template <typename T>
-concept Handle_like_c = requires(T h) { h.fd.native_handle(); };
+concept Handle_like_c = requires(T h) {
+    { h.native_handle() } -> std::convertible_to<int>;
+    // Same readability gate as rio::io::Handle_like_c: only readable
+    // states (handle, file<open>, connected/bound sockets) match.
+    typename T::readable_tag;
+};
 
 export template <typename T, typename Payload = std::monostate>
 struct Basic_op
@@ -565,36 +570,36 @@ export auto read_line(rio::context &ctx, int fd)
 export template <typename Rep, typename Period>
 auto stop_read_after(rio::context &ctx, Handle_like_c auto &h, std::span<char> buf, std::chrono::duration<Rep, Period> t)
 {
-    return stop_read_after(ctx, h.fd.native_handle(), buf, t);
+    return stop_read_after(ctx, h.native_handle(), buf, t);
 }
 
 export auto read(rio::context &ctx, Handle_like_c auto &h, std::span<char> buf)
 {
-    return read(ctx, h.fd.native_handle(), buf);
+    return read(ctx, h.native_handle(), buf);
 }
 export auto write(rio::context &ctx, Handle_like_c auto &h, std::span<const char> buf)
 {
-    return write(ctx, h.fd.native_handle(), buf);
+    return write(ctx, h.native_handle(), buf);
 }
 export auto write_all(rio::context &ctx, Handle_like_c auto &h, std::span<const char> b)
 {
-    return write_all(ctx, h.fd.native_handle(), b);
+    return write_all(ctx, h.native_handle(), b);
 }
 export auto read_till_full(rio::context &ctx, Handle_like_c auto &h, std::span<char> b)
 {
-    return read_till_full(ctx, h.fd.native_handle(), b);
+    return read_till_full(ctx, h.native_handle(), b);
 }
 export auto read_till_eof(rio::context &ctx, Handle_like_c auto &h)
 {
-    return read_till_eof(ctx, h.fd.native_handle());
+    return read_till_eof(ctx, h.native_handle());
 }
 export auto read_till(rio::context &ctx, Handle_like_c auto &h, char d)
 {
-    return read_till(ctx, h.fd.native_handle(), d);
+    return read_till(ctx, h.native_handle(), d);
 }
 export auto read_line(rio::context &ctx, Handle_like_c auto &h)
 {
-    return read_line(ctx, h.fd.native_handle());
+    return read_line(ctx, h.native_handle());
 }
 
 } // namespace rio::fut

@@ -4,7 +4,7 @@ import rio;
 auto main() -> int
 {
     // opened socket in sync mode: sync read will block and wont silently return 0, for WOULD_BLOCK
-    auto sock_res = rio::Tcp_socket::open_and_listen("0.0.0.0", 6969, rio::s_opt::sync_server_v4);
+    auto sock_res = rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("0.0.0.0", 6969, rio::s_opt::sync_server_v4);
 
     if (!sock_res) {
         std::println("{}", sock_res.error());

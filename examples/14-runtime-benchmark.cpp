@@ -18,7 +18,7 @@ struct Benchmark_config
 struct Benchmark_session
 {
     rio::context *ctx;
-    rio::Tcp_socket sock;
+    rio::Tcp_socket<rio::tcp_state::connected> sock;
     std::vector<char> buffer;
     std::size_t remaining;
 };
@@ -100,7 +100,7 @@ auto parse_args(int argc, char **argv) -> std::optional<Benchmark_config>
     return cfg;
 }
 
-auto handle_benchmark_client(rio::context &ctx, rio::Tcp_socket sock, std::size_t total_messages, std::size_t message_size) -> rio::fut::Task<void>
+auto handle_benchmark_client(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::connected> sock, std::size_t total_messages, std::size_t message_size) -> rio::fut::Task<void>
 {
     auto session = std::make_shared<Benchmark_session>(Benchmark_session{
         .ctx = &ctx,
@@ -182,7 +182,7 @@ int main(int argc, char **argv)
 
     const std::size_t total_messages_per_client = cfg.warmup_messages + cfg.messages;
 
-    auto listen_res = rio::Tcp_socket::open_and_listen("127.0.0.1", 0, rio::s_opt::async_server_v4, cfg.backlog);
+    auto listen_res = rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("127.0.0.1", 0, rio::s_opt::async_server_v4, cfg.backlog);
     if (!listen_res) {
         std::println(std::cerr, "listen error: {}", listen_res.error().message());
         return 1;
@@ -206,9 +206,9 @@ int main(int argc, char **argv)
     std::jthread server_thread([&](std::stop_token) {
         try {
             rio::context io(static_cast<unsigned>(cfg.runtime_entries));
-            rio::Runtime rt(&io);
+            rio::Runtime rt(io);
 
-            rt.spawn(rio::fut::accept_many(io, listener, cfg.clients, [&](rio::Tcp_socket client, rio::address) {
+            rt.spawn(rio::fut::accept_many(io, listener, cfg.clients, [&](rio::Tcp_socket<rio::tcp_state::connected> client, rio::address) {
                          rt.spawn(handle_benchmark_client(rt.ctx(), std::move(client), total_messages_per_client, cfg.message_size));
                      }).or_else([&](std::error_code ec) {
                 record_error(error_mu, errors, std::format("accept loop: {}", ec.message()));
@@ -228,19 +228,21 @@ int main(int argc, char **argv)
 
     for (std::size_t client_id = 0; client_id < cfg.clients; ++client_id) {
         clients.emplace_back([&, client_id](std::stop_token) {
-            auto sock_res = rio::Tcp_socket::open(rio::s_opt::client_v4);
+            auto sock_res = rio::Tcp_socket<rio::tcp_state::unbound>::open(rio::s_opt::client_v4);
             if (!sock_res) {
                 record_error(error_mu, errors, std::format("client {} open: {}", client_id, sock_res.error().message()));
                 error_count.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
 
-            auto sock = std::move(*sock_res);
-            if (auto res = rio::io::connect(sock, server_addr); !res) {
-                record_error(error_mu, errors, std::format("client {} connect: {}", client_id, res.error().message()));
+            auto unbound = std::move(*sock_res);
+            auto conn_res = rio::io::connect(std::move(unbound), server_addr);
+            if (!conn_res) {
+                record_error(error_mu, errors, std::format("client {} connect: {}", client_id, conn_res.error().message()));
                 error_count.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
+            auto sock = std::move(*conn_res);
 
             std::vector<char> payload(cfg.message_size);
             std::vector<char> echo(cfg.message_size);

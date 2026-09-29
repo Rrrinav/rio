@@ -30,3 +30,15 @@ If:
 CompileFlags:
   Remove:
     - -stdlib=libc++
+---
+# Files below the root (src/, examples/) fall back with their own directory
+# as CWD, so root-relative module paths miss. Anchor them one level up.
+# (src/*.cppm normally resolves via compile_commands.json; this is the net
+# for examples/*.cpp and any file without a DB entry.)
+If:
+  PathMatch: (src|examples)/.*
+
+CompileFlags:
+  Add:
+    - -fprebuilt-module-path=../bin/pcms/
+    - -fprebuilt-module-path=../bin/std/

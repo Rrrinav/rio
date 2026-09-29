@@ -235,15 +235,23 @@ auto ensure_std(const Config &cfg, bool force) -> std::expected<void, bld::Err>
 }
 
 // One representative task: command + inputs + output (+ compile-db mark).
+// The absolute root cwd is stamped on every task: besides pinning task
+// execution to the project root, it is what lands in compile_commands.json
+// as "directory" — clangd ignores DB entries with a relative directory,
+// so this is what makes module-aware IDE features work.
 auto link_step(
     bld::Plan &plan,
+    const std::string &root,
     const std::string &name,
     bld::Cmd cmd,
     const std::vector<std::string> &inputs,
     const std::string &output,
     bool compile_command = false) -> void
 {
-    plan.add(name, std::move(cmd));
+    bld::Exec_spec spec;
+    spec.cmd = std::move(cmd);
+    spec.cfg.cwd = root;
+    plan.add(name, std::move(spec));
     for (const auto &in : inputs) {
         plan.needs(name, in);
     }
@@ -319,6 +327,12 @@ auto build_main(const Config &cfg, std::optional<std::size_t> jobs, bool force) 
     const std::string std_pcm = (cfg.dir_std / STD_PCM).string();
     const auto inc = cfg.mod_paths();
 
+    auto root_res = bld::fs::current_path();
+    if (!root_res) {
+        return std::unexpected(root_res.error());
+    }
+    const std::string root = std::move(*root_res);
+
     for (const auto &m : mods) {
         const std::string src = m.inner.file.string();
         const std::string pcm = m.pcm(cfg).string();
@@ -335,7 +349,10 @@ auto build_main(const Config &cfg, std::optional<std::size_t> jobs, bool force) 
         }
 
         const std::string pt = "pcm:" + m.inner.name;
-        plan.add(pt, std::move(pre));
+        bld::Exec_spec pre_spec;
+        pre_spec.cmd = std::move(pre);
+        pre_spec.cfg.cwd = root;
+        plan.add(pt, std::move(pre_spec));
         plan.needs(pt, src);
         plan.needs(pt, std_pcm);
         for (const auto &dep : m.inner.imports) {
@@ -360,7 +377,7 @@ auto build_main(const Config &cfg, std::optional<std::size_t> jobs, bool force) 
             cc.push(p);
         }
         const std::string ot = "obj:" + m.inner.name;
-        link_step(plan, ot, std::move(cc), {pcm}, obj);
+        link_step(plan, root, ot, std::move(cc), {pcm}, obj);
         objs.push_back(obj);
     }
 
@@ -369,7 +386,7 @@ auto build_main(const Config &cfg, std::optional<std::size_t> jobs, bool force) 
     for (const auto &o : objs) {
         ar.push(o);
     }
-    link_step(plan, "lib-static", std::move(ar), objs, static_lib);
+    link_step(plan, root, "lib-static", std::move(ar), objs, static_lib);
 
     const std::string shared_lib = (cfg.dir_libs / cfg.lib_shared).string();
     bld::Cmd so{cfg.compiler, "-shared", "-o", shared_lib};
@@ -382,7 +399,7 @@ auto build_main(const Config &cfg, std::optional<std::size_t> jobs, bool force) 
     for (const auto &f : cfg.flags_linker) {
         so.push(f);
     }
-    link_step(plan, "lib-shared", std::move(so), objs, shared_lib);
+    link_step(plan, root, "lib-shared", std::move(so), objs, shared_lib);
 
     if (bld::fs::exists(cfg.main_src)) {
         const std::string exe = (cfg.dir_bin / cfg.exe_name).string();
@@ -401,7 +418,7 @@ auto build_main(const Config &cfg, std::optional<std::size_t> jobs, bool force) 
         }
         std::vector<std::string> inputs{cfg.main_src};
         inputs.insert(inputs.end(), objs.begin(), objs.end());
-        link_step(plan, "exe", std::move(link), inputs, exe, true);
+        link_step(plan, root, "exe", std::move(link), inputs, exe, true);
     }
 
     bld::log::i("Building with {} threads...", bld::resolve_parallel_width(jobs));

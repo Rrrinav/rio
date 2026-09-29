@@ -86,7 +86,7 @@ auto make_timer_task(rio::context &ctx, std::size_t iterations) -> rio::fut::Tas
 auto run_phase(const Timer_benchmark_config &cfg, std::size_t iterations) -> std::chrono::nanoseconds
 {
     rio::context io(static_cast<unsigned>(cfg.runtime_entries));
-    rio::Runtime rt(&io);
+    rio::Runtime rt(io);
 
     for (std::size_t i = 0; i < cfg.tasks; ++i)
         rt.spawn(make_timer_task(io, iterations));

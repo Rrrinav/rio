@@ -6,17 +6,17 @@ using namespace rio::http::v1_1;
 struct Http_session
 {
     rio::context &ctx;
-    rio::Tcp_socket sock;
+    rio::Tcp_socket<rio::tcp_state::connected> sock;
     rio::address addr;
-    rio::Async_buffered_reader<rio::Tcp_socket, 4096> reader;
+    rio::Async_buffered_reader<rio::Tcp_socket<rio::tcp_state::connected>, 4096> reader;
     request req{};
     std::string response_buf;
 
-    Http_session(rio::context &c, rio::Tcp_socket &&s, rio::address a) : ctx(c), sock(std::move(s)), addr(a), reader(ctx, sock)
+    Http_session(rio::context &c, rio::Tcp_socket<rio::tcp_state::connected> &&s, rio::address a) : ctx(c), sock(std::move(s)), addr(a), reader(ctx, sock)
     {}
 };
 
-rio::fut::Task<void> handle_http_client(rio::context &ctx, rio::Tcp_socket sock, rio::address addr, std::shared_ptr<Router> router)
+rio::fut::Task<void> handle_http_client(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::connected> sock, rio::address addr, std::shared_ptr<Router> router)
 {
     auto sess = std::make_shared<Http_session>(ctx, std::move(sock), addr);
 
@@ -59,7 +59,7 @@ int main()
     std::string index_html = std::move(*html_res);
 
     rio::context IO{512};
-    rio::Runtime rt{&IO};
+    rio::Runtime rt{IO};
     auto router = std::make_shared<Router>();
 
     router->get("/", [index_html](const auto &) {
@@ -83,14 +83,14 @@ int main()
         return response::json(ctx.get());
     });
 
-    auto listen_res = rio::Tcp_socket::open_and_listen("0.0.0.0", 8080, rio::s_opt::async_server_v4);
+    auto listen_res = rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("0.0.0.0", 8080, rio::s_opt::async_server_v4);
     if (!listen_res)
         return 1;
 
     auto [listener, server_addr] = std::move(*listen_res);
     std::println(" [RIO]: Web server live at: http://localhost:8080");
 
-    rt.spawn(rio::fut::accept_all(IO, listener, [&rt, router](rio::Tcp_socket client, rio::address addr) {
+    rt.spawn(rio::fut::accept_all(IO, listener, [&rt, router](rio::Tcp_socket<rio::tcp_state::connected> client, rio::address addr) {
         rt.spawn(handle_http_client(rt.ctx(), std::move(client), addr, router));
     }));
 

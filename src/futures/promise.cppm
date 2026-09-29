@@ -15,17 +15,46 @@ concept StateLike = requires(S *s, std::error_code ec) {
 export template <typename StateT>
 struct Promise
 {
-    StateT *state;
+    StateT *state = nullptr;
 
-    template <typename... Args>
-    void resolve(Args &&...args)
+    Promise() = default;
+    explicit Promise(StateT *s) : state(s)
+    {}
+
+    // Non-owning observer over shared completion state: copies would
+    // alias the same state and make double-settle invisible, so a
+    // Promise moves but never copies.
+    Promise(const Promise &) = delete;
+    Promise &operator=(const Promise &) = delete;
+    Promise(Promise &&other) noexcept : state(other.state)
     {
-        state->resolve(std::forward<Args>(args)...);
+        other.state = nullptr;
+    }
+    Promise &operator=(Promise &&other) noexcept
+    {
+        state = other.state;
+        other.state = nullptr;
+        return *this;
     }
 
-    void reject(std::error_code ec)
+    explicit operator bool() const
     {
-        state->reject(ec);
+        return state != nullptr;
+    }
+
+    template <typename... Args>
+    auto resolve(Args &&...args) -> bool
+    {
+        if (!state)
+            return false;
+        return state->resolve(std::forward<Args>(args)...);
+    }
+
+    auto reject(std::error_code ec) -> bool
+    {
+        if (!state)
+            return false;
+        return state->reject(ec);
     }
 };
 
@@ -39,16 +68,24 @@ struct State
     std::error_code error{};
     bool is_ready = false;
 
-    void resolve(T v)
+    // Set-once: a second settle is a logic error. It is ignored (and
+    // reported as false) instead of silently overwriting the outcome.
+    auto resolve(T v) -> bool
     {
+        if (is_ready)
+            return false;
         value.emplace(std::move(v));
         is_ready = true;
+        return true;
     }
 
-    void reject(std::error_code ec)
+    auto reject(std::error_code ec) -> bool
     {
+        if (is_ready)
+            return false;
         error = ec;
         is_ready = true;
+        return true;
     }
 
     auto poll() -> rio::fut::res<T>
@@ -71,15 +108,22 @@ struct State<void>
     std::error_code error{};
     bool is_ready = false;
 
-    void resolve()
+    // Set-once: see State<T>.
+    auto resolve() -> bool
     {
+        if (is_ready)
+            return false;
         is_ready = true;
+        return true;
     }
 
-    void reject(std::error_code ec)
+    auto reject(std::error_code ec) -> bool
     {
+        if (is_ready)
+            return false;
         error = ec;
         is_ready = true;
+        return true;
     }
 
     auto poll() -> rio::fut::res<void>
@@ -99,19 +143,19 @@ export namespace promise {
 template <StateLike StateT>
 auto bind(StateT &s)
 {
-    rio::Promise<StateT> p{.state = &s};
+    rio::Promise<StateT> p{&s};
 
     auto f = rio::fut::make(&s, rio::fut::Call_poll_ptr{});
-    return std::pair{p, std::move(f)};
+    return std::pair{std::move(p), std::move(f)};
 }
 
 template <StateLike StateT>
 auto bind(StateT *s)
 {
-    rio::Promise<StateT> p{.state = s};
+    rio::Promise<StateT> p{s};
 
     auto f = rio::fut::make(s, rio::fut::Call_poll_ptr{});
-    return std::pair{p, std::move(f)};
+    return std::pair{std::move(p), std::move(f)};
 }
 
 template <typename T>
@@ -119,7 +163,7 @@ auto make()
 {
     auto shared_state = std::make_shared<State<T>>();
 
-    rio::Promise<State<T>> p{.state = shared_state.get()};
+    rio::Promise<State<T>> p{shared_state.get()};
     auto f = rio::fut::make(std::move(shared_state), rio::fut::Call_poll_ptr{});
     return std::pair{p, std::move(f)};
 }
@@ -128,7 +172,7 @@ template <typename T>
 auto make_unique()
 {
     auto unique_state = std::make_unique<State<T>>();
-    rio::Promise<State<T>> p{.state = unique_state.get()};
+    rio::Promise<State<T>> p{unique_state.get()};
     auto f = rio::fut::make(std::move(unique_state), rio::fut::Call_poll_ptr{});
     return std::pair{p, std::move(f)};
 }

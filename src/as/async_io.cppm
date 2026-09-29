@@ -15,7 +15,7 @@ enum class Req_type { Read, Write, Accept };
 
 export struct accept_result
 {
-    rio::Tcp_socket client;
+    rio::Tcp_socket<rio::tcp_state::connected> client;
     rio::address address;
 };
 
@@ -73,7 +73,7 @@ struct uring_accept_request
         if (res < 0) {
             self->callback(self->context, std::unexpected(rio::Err{-res, "Accept failed"}), self->user_data);
         } else {
-            auto client_sock = rio::Tcp_socket::attach(res);
+            auto client_sock = rio::Tcp_socket<rio::tcp_state::connected>::attach(res);
             self->client_addr.len = self->addr_len;
 
             // Construct our dedicated result struct
@@ -97,7 +97,7 @@ concept On_Accept_CB_C = std::invocable<Fn, rio::context &, rio::result<accept_r
 
 export template <typename T, typename Fn>
     requires On_Read_CB_C<Fn, T>
-void read(rio::context &context, rio::Tcp_socket &sock, std::span<char> buffer, Fn &&on_read, T *user)
+void read(rio::context &context, rio::Tcp_socket<rio::tcp_state::connected> &sock, std::span<char> buffer, Fn &&on_read, T *user)
 {
     auto *sqe = context.sqe();
     if (!sqe)
@@ -106,7 +106,7 @@ void read(rio::context &context, rio::Tcp_socket &sock, std::span<char> buffer, 
     using request_type = uring_request<std::decay_t<Fn>, T>;
 
     auto *req = context.make_pooled<request_type>(
-        Req_type::Read, sock.fd.native_handle(),
+        Req_type::Read, sock.native_handle(),
         iovec{.iov_base = buffer.data(), .iov_len = buffer.size()},
         user, std::forward<Fn>(on_read), context);
     req->header.call = &request_type::on_complete;
@@ -119,7 +119,7 @@ void read(rio::context &context, rio::Tcp_socket &sock, std::span<char> buffer, 
 
 export template <typename T, typename Fn>
     requires On_Write_CB_C<Fn, T>
-void write(rio::context &context, rio::Tcp_socket &sock, std::span<const char> buffer, Fn &&on_write, T *user)
+void write(rio::context &context, rio::Tcp_socket<rio::tcp_state::connected> &sock, std::span<const char> buffer, Fn &&on_write, T *user)
 {
     auto *sqe = context.sqe();
     if (!sqe)
@@ -128,7 +128,7 @@ void write(rio::context &context, rio::Tcp_socket &sock, std::span<const char> b
     using request_type = uring_request<std::decay_t<Fn>, T>;
 
     auto *req = context.make_pooled<request_type>(
-        Req_type::Write, sock.fd.native_handle(),
+        Req_type::Write, sock.native_handle(),
         iovec{.iov_base = const_cast<char *>(buffer.data()), .iov_len = buffer.size()},
         user, std::forward<Fn>(on_write), context);
     req->header.call = &request_type::on_complete;
@@ -141,7 +141,7 @@ void write(rio::context &context, rio::Tcp_socket &sock, std::span<const char> b
 
 export template <typename T, typename Fn>
     requires On_Accept_CB_C<Fn, T>
-void accept(rio::context &context, rio::Tcp_socket &listener, Fn &&on_accept, T *user)
+void accept(rio::context &context, rio::Tcp_socket<rio::tcp_state::listening> &listener, Fn &&on_accept, T *user)
 {
     auto *sqe = context.sqe();
     if (!sqe)
@@ -149,7 +149,7 @@ void accept(rio::context &context, rio::Tcp_socket &listener, Fn &&on_accept, T 
 
     using request_type = uring_accept_request<std::decay_t<Fn>, T>;
 
-    auto *req = context.make_pooled<request_type>(context, user, std::forward<Fn>(on_accept), listener.fd.native_handle());
+    auto *req = context.make_pooled<request_type>(context, user, std::forward<Fn>(on_accept), listener.native_handle());
     req->header.call = &request_type::on_complete;
 
     io_uring_prep_accept(sqe, req->listener_fd, reinterpret_cast<sockaddr *>(&req->client_addr.storage), &req->addr_len, 0);

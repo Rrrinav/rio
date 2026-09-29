@@ -9,7 +9,7 @@ export import :socket.address;
 namespace rio {
 export struct Tcp_accept_result
 {
-    rio::Tcp_socket client;
+    rio::Tcp_socket<rio::tcp_state::connected> client;
     rio::address address;
 };
 

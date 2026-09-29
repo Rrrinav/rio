@@ -5,7 +5,7 @@ constexpr int timeout_seconds = 7;
 
 struct ClientContext
 {
-    rio::Tcp_socket sock;
+    rio::Tcp_socket<rio::tcp_state::connected> sock;
     rio::address addr{};
     std::array<char, 1024> buf{};
     std::size_t n = 0;
@@ -75,7 +75,7 @@ using ClientFuture = decltype(make_echo_client(ClientContext{}));
 
 auto main() -> int
 {
-    auto open_res = rio::Tcp_socket::open_and_listen("0.0.0.0", 6969, rio::s_opt::async_server_v4);
+    auto open_res = rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("0.0.0.0", 6969, rio::s_opt::async_server_v4);
     if (!open_res) {
         std::println("Error: {}", open_res.error());
         return 1;
@@ -88,7 +88,7 @@ auto main() -> int
 
     // Functions that have try return immediately on any error, like here
     // try_accept will retutn on would block. Same with try_read and try_write.
-    auto acceptor = rio::Future{ std::move(listener), [](rio::Tcp_socket &l) -> rio::fut::res<ClientContext> {
+    auto acceptor = rio::Future{ std::move(listener), [](rio::Tcp_socket<rio::tcp_state::listening> &l) -> rio::fut::res<ClientContext> {
         rio::address addr{};
         auto r = rio::io::try_accept(l);
 

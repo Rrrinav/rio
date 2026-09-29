@@ -3,7 +3,7 @@ import rio;
 
 using namespace std::chrono_literals;
 
-using Accept_fut = decltype(rio::fut::accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket &>()));
+using Accept_fut = decltype(rio::fut::accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket<rio::tcp_state::listening> &>()));
 
 struct Session
 {
@@ -14,9 +14,9 @@ struct Session
 int main()
 {
     rio::context IO{256};
-    rio::Runtime rt{&IO};
+    rio::Runtime rt{IO};
 
-    auto listen_res = rio::Tcp_socket::open_and_listen("127.0.0.1", 0, rio::s_opt::async_server_v4);
+    auto listen_res = rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("127.0.0.1", 0, rio::s_opt::async_server_v4);
     if (!listen_res) {
         return 1;
     }
@@ -146,7 +146,7 @@ int main()
 
         rt.spawn(rio::fut::wake_up_after(IO, 150ms).then([&IO, &listener]() {
             std::println("7) supervisor: shutdown(listener), dropping future");
-            rio::fut::shutdown(IO, listener.fd.native_handle(), static_cast<int>(rio::Tcp_socket::shut::both));
+            rio::fut::shutdown(IO, listener.native_handle(), static_cast<int>(rio::tcp_shut::both));
             return rio::fut::ready();
         }));
 

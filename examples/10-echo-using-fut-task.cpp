@@ -12,16 +12,16 @@ import rio;
 struct Session
 {
     rio::context &ctx;
-    rio::Tcp_socket sock;
+    rio::Tcp_socket<rio::tcp_state::connected> sock;
     rio::address addr;
-    rio::Async_buffered_reader<rio::Tcp_socket, 4096> reader;
+    rio::Async_buffered_reader<rio::Tcp_socket<rio::tcp_state::connected>, 4096> reader;
     std::string write_buf;
 
-    Session(rio::context &c, rio::Tcp_socket &&s, rio::address a) : ctx(c), sock(std::move(s)), addr(a), reader(ctx, sock)
+    Session(rio::context &c, rio::Tcp_socket<rio::tcp_state::connected> &&s, rio::address a) : ctx(c), sock(std::move(s)), addr(a), reader(ctx, sock)
     {}
 };
 
-/*auto*/ rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket sock, rio::address addr)
+/*auto*/ rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::connected> sock, rio::address addr)
 {
     auto session = std::make_shared<Session>(ctx, std::move(sock), addr);
 
@@ -58,12 +58,12 @@ int main()
 
     std::vector<rio::fut::Task<void>> clients;
 
-    __TRY(listen_res, rio::Tcp_socket::open_and_listen("0.0.0.0", 6969, rio::s_opt::async_server_v4));
+    __TRY(listen_res, rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("0.0.0.0", 6969, rio::s_opt::async_server_v4));
     auto [server_sock, addr] = std::move(listen_res);
 
     std::println("Async Echo Server running on port 6969...");
 
-    auto accept_loop = rio::fut::accept_all(IO, server_sock, [&](rio::Tcp_socket client, rio::address addr) {
+    auto accept_loop = rio::fut::accept_all(IO, server_sock, [&](rio::Tcp_socket<rio::tcp_state::connected> client, rio::address addr) {
         std::println(" [RIO]: New Client: {}", addr);
         clients.push_back(handle_client(IO, std::move(client), addr));
     });

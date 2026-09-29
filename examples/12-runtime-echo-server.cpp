@@ -4,16 +4,16 @@ import rio;
 struct Session
 {
     rio::context &ctx;
-    rio::Tcp_socket sock;
+    rio::Tcp_socket<rio::tcp_state::connected> sock;
     rio::address addr;
-    rio::Async_buffered_reader<rio::Tcp_socket, 4096> reader;
+    rio::Async_buffered_reader<rio::Tcp_socket<rio::tcp_state::connected>, 4096> reader;
     std::string write_buf;
 
-    Session(rio::context &c, rio::Tcp_socket &&s, rio::address a) : ctx(c), sock(std::move(s)), addr(a), reader(ctx, sock)
+    Session(rio::context &c, rio::Tcp_socket<rio::tcp_state::connected> &&s, rio::address a) : ctx(c), sock(std::move(s)), addr(a), reader(ctx, sock)
     {}
 };
 
-rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket sock, rio::address addr)
+rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::connected> sock, rio::address addr)
 {
     auto session = std::make_shared<Session>(ctx, std::move(sock), addr);
 
@@ -55,9 +55,9 @@ rio::fut::Task<void> handle_client(rio::context &ctx, rio::Tcp_socket sock, rio:
 int main()
 {
     rio::context IO{256};
-    rio::Runtime rt{&IO};
+    rio::Runtime rt{IO};
 
-    auto listen_res = rio::Tcp_socket::open_and_listen("0.0.0.0", 6969, rio::s_opt::async_server_v4);
+    auto listen_res = rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("0.0.0.0", 6969, rio::s_opt::async_server_v4);
     if (!listen_res) {
         std::println("Failed to open server: {}", listen_res.error().message());
         return 1;
@@ -68,7 +68,7 @@ int main()
 
     // 1. Spawn the accept loop straight into the runtime!
     rt.spawn(
-        rio::fut::accept_all(IO, listener, [&rt](rio::Tcp_socket client, rio::address addr) {
+        rio::fut::accept_all(IO, listener, [&rt](rio::Tcp_socket<rio::tcp_state::connected> client, rio::address addr) {
             std::println(" [RIO]: New Client Connected: {}", addr);
             rt.spawn(handle_client(rt.ctx(), std::move(client), addr));
         }).or_else([](std::error_code ec) {

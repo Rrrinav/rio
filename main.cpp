@@ -3,14 +3,14 @@ import rio;
 
 struct Session
 {
-    rio::Tcp_socket sock;
+    rio::Tcp_socket<rio::tcp_state::connected> sock;
     rio::address addr;
     std::array<char, 4096> buffer;
 };
 
 struct Server
 {
-    rio::Tcp_socket listener;
+    rio::Tcp_socket<rio::tcp_state::listening> listener;
 };
 
 // You can accept session* insetad of void*, this is made sure by templates
@@ -23,7 +23,7 @@ auto main() -> int
 {
     rio::context ctx;
 
-    auto res = rio::Tcp_socket::open_and_listen("0.0.0.0", 8000);
+    auto res = rio::Tcp_socket<rio::tcp_state::unbound>::open_and_listen("0.0.0.0", 8000);
     if (!res) {
         std::println(" [RIO]: Fatal: {}", res.error().message());
         return 1;

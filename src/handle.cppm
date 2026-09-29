@@ -12,6 +12,10 @@ namespace rio {
 
 export struct handle
 {
+    // Capability marker: a bare handle is an explicit low-level token,
+    // so it stays usable with the generic io/fut overloads.
+    using readable_tag = void;
+
     int fd = -1;
 
     // Constructors

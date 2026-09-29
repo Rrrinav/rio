@@ -52,7 +52,7 @@ struct Accept_req_impl : Accept_req
             finish(self, std::error_code(-res, std::system_category()));
         } else {
             self->payload.client_addr.len = self->payload.addr_len;
-            finish(self, Tcp_accept_result{.client = rio::Tcp_socket::attach(res), .address = std::move(self->payload.client_addr)});
+            finish(self, Tcp_accept_result{.client = rio::Tcp_socket<rio::tcp_state::connected>::attach(res), .address = std::move(self->payload.client_addr)});
         }
     }
 };
@@ -91,40 +91,52 @@ struct Connect_req_impl : Connect_req
     }
 };
 
-export auto accept(rio::context &ctx, rio::Tcp_socket &listener)
+export auto accept(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening> &listener)
 {
     auto *req = ctx.make_pooled<Accept_req_impl>(ctx);
     req->header.call = &Accept_req_impl::on_complete;
     auto *sqe = ctx.sqe();
 
     io_uring_prep_accept(
-        sqe, listener.fd.native_handle(), reinterpret_cast<sockaddr *>(&req->payload.client_addr.storage), &req->payload.addr_len, SOCK_CLOEXEC);
+        sqe, listener.native_handle(), reinterpret_cast<sockaddr *>(&req->payload.client_addr.storage), &req->payload.addr_len, SOCK_CLOEXEC);
 
     io_uring_sqe_set_data(sqe, &req->header);
     return rio::Future(Async_handle<Accept_req_impl>{req}, rio::fut::Call_poll{});
 }
 
-export auto connect(rio::context &ctx, rio::Tcp_socket &client, const rio::address &addr)
+// Borrowed connect: the transition completes asynchronously, so the
+// socket cannot be consumed here. Entry in the wrong state (e.g. a
+// listener) is still a compile error; on success the caller must treat
+// the socket as connected.
+export auto connect(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::unbound> &client, const rio::address &addr)
 {
     auto *req = ctx.make_pooled<Connect_req_impl>(ctx, addr);
     req->header.call = &Connect_req_impl::on_complete;
     auto *sqe = ctx.sqe();
-    io_uring_prep_connect(sqe, client.fd.native_handle(), req->payload.data(), req->payload.size());
+    io_uring_prep_connect(sqe, client.native_handle(), req->payload.data(), req->payload.size());
     io_uring_sqe_set_data(sqe, &req->header);
     return rio::Future(Async_handle<Connect_req_impl>{req}, rio::fut::Call_poll{});
 }
 
-export auto shutdown(rio::context &ctx, rio::Tcp_socket &sock, rio::Tcp_socket::shut how)
+export auto shutdown(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::connected> &sock, rio::tcp_shut how)
 {
-    return rio::fut::shutdown(ctx, sock.fd.native_handle(), static_cast<int>(how));
+    return rio::fut::shutdown(ctx, sock.native_handle(), static_cast<int>(how));
 }
+
+// Anything with a consuming detatch() can be handed to the kernel for
+// async close: open files/sockets of any open state plus bare handles.
+// Closed handles have no detatch(), so double-close is a compile error.
+export template <typename T>
+concept Closable_c = requires(T t) {
+    { std::move(t).detatch() } -> std::convertible_to<int>;
+};
 
 // Takes the socket by value and detaches its fd immediately: the kernel
 // owns the close from here on, so the RAII destructor cannot double-close
 // (which would be dangerous after the fd number gets reused).
-export auto close(rio::context &ctx, Handle_like_c auto sock)
+export auto close(rio::context &ctx, Closable_c auto sock)
 {
-    int fd = sock.fd.detatch();
+    int fd = std::move(sock).detatch();
     return rio::fut::close(ctx, fd);
 }
 
@@ -132,10 +144,10 @@ export template <typename Handler>
 struct Accept_many_impl
 {
     rio::context *ctx;
-    rio::Tcp_socket *listener;
+    rio::Tcp_socket<rio::tcp_state::listening> *listener;
     size_t remaining;
     Handler handler;
-    std::optional<decltype(accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket &>()))> curr_fut;
+    std::optional<decltype(accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket<rio::tcp_state::listening> &>()))> curr_fut;
 
     auto poll() -> rio::fut::res<void>
     {
@@ -160,7 +172,7 @@ struct Accept_many_impl
 };
 
 export template <typename Handler>
-auto accept_many(rio::context &ctx, rio::Tcp_socket &listener, size_t limit, Handler &&handler)
+auto accept_many(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening> &listener, size_t limit, Handler &&handler)
 {
     return rio::fut::make(Accept_many_impl<std::decay_t<Handler>>{&ctx, &listener, limit, std::forward<Handler>(handler)}, [](auto &s) {
         return s.poll();
@@ -171,9 +183,9 @@ export template <typename Handler>
 struct Accept_all_impl
 {
     rio::context *ctx;
-    rio::Tcp_socket *listener;
+    rio::Tcp_socket<rio::tcp_state::listening> *listener;
     Handler handler;
-    std::optional<decltype(accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket &>()))> curr_fut{};
+    std::optional<decltype(accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket<rio::tcp_state::listening> &>()))> curr_fut{};
 
     auto poll() -> rio::fut::res<void>
     {
@@ -196,7 +208,7 @@ struct Accept_all_impl
 };
 
 export template <typename Handler>
-auto accept_all(rio::context &ctx, rio::Tcp_socket &listener, Handler &&handler)
+auto accept_all(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening> &listener, Handler &&handler)
 {
     return rio::fut::make(Accept_all_impl<std::decay_t<Handler>>{&ctx, &listener, std::forward<Handler>(handler)}, rio::fut::Call_poll{});
 }
@@ -205,10 +217,10 @@ export template <typename OutputIt>
 struct Accept_into_impl
 {
     rio::context *ctx;
-    rio::Tcp_socket *listener;
+    rio::Tcp_socket<rio::tcp_state::listening> *listener;
     size_t remaining;
     OutputIt it;
-    std::optional<decltype(accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket &>()))> curr_fut;
+    std::optional<decltype(accept(std::declval<rio::context &>(), std::declval<rio::Tcp_socket<rio::tcp_state::listening> &>()))> curr_fut;
 
     auto poll() -> rio::fut::res<void>
     {
@@ -232,13 +244,13 @@ struct Accept_into_impl
 };
 
 export template <typename OutputIt>
-auto accept_into(rio::context &ctx, rio::Tcp_socket &listener, size_t limit, OutputIt it)
+auto accept_into(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening> &listener, size_t limit, OutputIt it)
 {
     return rio::fut::make(Accept_into_impl<OutputIt>{&ctx, &listener, limit, it}, rio::fut::Call_poll{});
 }
 
 export template <typename Rep, typename Period>
-auto stop_accept_after(rio::context &ctx, rio::Tcp_socket &listener, std::chrono::duration<Rep, Period> timeout)
+auto stop_accept_after(rio::context &ctx, rio::Tcp_socket<rio::tcp_state::listening> &listener, std::chrono::duration<Rep, Period> timeout)
 {
     using namespace std::chrono;
     struct Timed_accept_req : Accept_req
@@ -270,7 +282,7 @@ auto stop_accept_after(rio::context &ctx, rio::Tcp_socket &listener, std::chrono
                 finish(self, std::error_code(-res, std::system_category()));
             } else {
                 self->payload.client_addr.len = self->payload.addr_len;
-                finish(self, Tcp_accept_result{.client = rio::Tcp_socket::attach(res), .address = std::move(self->payload.client_addr)});
+                finish(self, Tcp_accept_result{.client = rio::Tcp_socket<rio::tcp_state::connected>::attach(res), .address = std::move(self->payload.client_addr)});
             }
         }
     };
@@ -290,7 +302,7 @@ auto stop_accept_after(rio::context &ctx, rio::Tcp_socket &listener, std::chrono
 
     io_uring_prep_accept(
         sqe_accept,
-        listener.fd.native_handle(),
+        listener.native_handle(),
         reinterpret_cast<sockaddr *>(&accept_req->payload.client_addr.storage),
         &accept_req->payload.addr_len,
         SOCK_CLOEXEC);

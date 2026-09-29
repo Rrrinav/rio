@@ -38,73 +38,175 @@ constexpr bool has(udp_opt subject, udp_opt flag)
     return (static_cast<uint32_t>(subject) & static_cast<uint32_t>(flag)) == static_cast<uint32_t>(flag);
 }
 
-export struct Udp_socket
+// Typestate UDP socket: an unbound socket can send_to (POSIX allows it)
+// but only a bound one can receive. Transitions consume (&&).
+//
+//   Udp_socket<closed>   — empty token; only close()/default produce one.
+//   Udp_socket<unbound>  — fresh fd; bind()/connect() consume it.
+//   Udp_socket<bound>    — bound (or connected); the only readable state.
+//
+// Same ownership and escape rules as Tcp_socket<>: move-only throughout,
+// attach()/detatch() are the explicit raw-fd crossings.
+export enum class udp_state { closed, unbound, bound };
+
+export template <udp_state S>
+struct Udp_socket;
+
+export template <>
+struct Udp_socket<udp_state::closed>
 {
+    Udp_socket() = default;
+
+    Udp_socket(const Udp_socket &) = delete;
+    Udp_socket &operator=(const Udp_socket &) = delete;
+    Udp_socket(Udp_socket &&) = default;
+    Udp_socket &operator=(Udp_socket &&) = default;
+};
+
+namespace detail {
+// Shared interior for the open states; state-specific operations live
+// on the specializations, not here.
+template <typename Sock>
+struct udp_base
+{
+  protected:
     rio::handle fd{};
 
-    Udp_socket() = default;
-    explicit Udp_socket(rio::handle &&h) noexcept : fd(std::move(h))
+  public:
+    udp_base() = default;
+    explicit udp_base(rio::handle &&h) noexcept : fd(std::move(h))
     {}
 
-    static auto open(udp_opt options = udp_opt::v4) -> result<Udp_socket>;
-    static auto open_and_bind(const rio::address &addr, udp_opt options = udp_opt::v4) -> result<Udp_socket>;
-    static auto open_and_bind(const char *ip, uint16_t port, udp_opt options = udp_opt::v4) -> result<std::tuple<Udp_socket, rio::address>>;
+    udp_base(const udp_base &) = delete;
+    udp_base &operator=(const udp_base &) = delete;
+    udp_base(udp_base &&) = default;
+    udp_base &operator=(udp_base &&) = default;
 
-    static auto attach(int raw_fd) -> Udp_socket;
-    explicit operator bool() const;
-
-    auto local_endpoint() const -> result<rio::address>;
-
-    template <typename T>
-    auto set_option(int level, int optname, T value) -> Udp_socket &
+    auto native_handle() const -> int
     {
-        ::setsockopt(fd.native_handle(), level, optname, &value, sizeof(value));
-        return *this;
+        return fd.native_handle();
     }
 
-    auto set_broadcast(bool enable) -> Udp_socket &
+    auto close() && -> Udp_socket<udp_state::closed>
+    {
+        fd.close();
+        return Udp_socket<udp_state::closed>{};
+    }
+    auto detatch() && -> int
+    {
+        return std::move(fd).detatch();
+    }
+
+    auto local_endpoint() const -> result<rio::address>
+    {
+        rio::address addr;
+        addr.len = sizeof(addr.storage);
+        if (::getsockname(fd.native_handle(), &addr.storage.general, &addr.len) == -1) {
+            return std::unexpected(Err{errno, "getsockname failed"});
+        }
+        return addr;
+    }
+
+    template <typename T>
+    auto set_option(int level, int optname, T value) -> Sock &
+    {
+        ::setsockopt(fd.native_handle(), level, optname, &value, sizeof(value));
+        return static_cast<Sock &>(*this);
+    }
+
+    auto set_broadcast(bool enable) -> Sock &
     {
         int val = enable ? 1 : 0;
         set_option(SOL_SOCKET, SO_BROADCAST, val);
-        return *this;
+        return static_cast<Sock &>(*this);
     }
 
-    auto set_reuse_address(bool enable) -> Udp_socket &
+    auto set_reuse_address(bool enable) -> Sock &
     {
         int val = enable ? 1 : 0;
         set_option(SOL_SOCKET, SO_REUSEADDR, val);
         set_option(SOL_SOCKET, SO_REUSEPORT, val);
-        return *this;
+        return static_cast<Sock &>(*this);
     }
 };
+} // namespace detail
 
-auto Udp_socket::attach(int raw_fd) -> Udp_socket
+export template <>
+struct Udp_socket<udp_state::unbound> : detail::udp_base<Udp_socket<udp_state::unbound>>
+{
+    Udp_socket() = default;
+    explicit Udp_socket(rio::handle &&h) noexcept : udp_base(std::move(h))
+    {}
+
+    static auto open(udp_opt options = udp_opt::v4) -> result<Udp_socket>;
+    static auto open_and_bind(const rio::address &addr, udp_opt options = udp_opt::v4) -> result<Udp_socket<udp_state::bound>>;
+    static auto open_and_bind(const char *ip, uint16_t port, udp_opt options = udp_opt::v4)
+        -> result<std::tuple<Udp_socket<udp_state::bound>, rio::address>>;
+
+    // Unsafe entry: takes ownership of a raw fd with no validation.
+    static auto attach(int raw_fd) -> Udp_socket;
+
+    // Consuming transitions. On failure the socket is consumed and its
+    // fd closed: a failed transition has no valid source to go back to.
+    auto bind(const address &addr) && -> result<Udp_socket<udp_state::bound>>;
+    auto connect(const address &addr) && -> result<Udp_socket<udp_state::bound>>;
+};
+
+export template <>
+struct Udp_socket<udp_state::bound> : detail::udp_base<Udp_socket<udp_state::bound>>
+{
+    Udp_socket() = default;
+    explicit Udp_socket(rio::handle &&h) noexcept : udp_base(std::move(h))
+    {}
+
+    // Capability marker: only a bound socket (plus file<open>, connected
+    // TCP and bare handles) matches the generic io/fut read/write overloads.
+    using readable_tag = void;
+
+    // Unsafe entry: an already-bound fd.
+    static auto attach(int raw_fd) -> Udp_socket;
+};
+
+// State transitions. Each consumes the source (&&).
+export auto bind(Udp_socket<udp_state::unbound> &&s, const address &addr) -> result<Udp_socket<udp_state::bound>>;
+export auto connect(Udp_socket<udp_state::unbound> &&s, const address &addr) -> result<Udp_socket<udp_state::bound>>;
+
+auto Udp_socket<udp_state::unbound>::bind(const address &addr) && -> result<Udp_socket<udp_state::bound>>
+{
+    if (::bind(fd.native_handle(), addr.data(), addr.size()) == -1) [[unlikely]] {
+        return std::unexpected(Err{errno, "Failed to bind UDP socket"});
+    }
+    return Udp_socket<udp_state::bound>{std::move(fd)};
+}
+
+auto Udp_socket<udp_state::unbound>::connect(const address &addr) && -> result<Udp_socket<udp_state::bound>>
+{
+    if (::connect(fd.native_handle(), addr.data(), addr.size()) == -1) [[unlikely]] {
+        return std::unexpected(Err{errno, "Failed to connect UDP socket"});
+    }
+    return Udp_socket<udp_state::bound>{std::move(fd)};
+}
+
+auto Udp_socket<udp_state::unbound>::attach(int raw_fd) -> Udp_socket
+{
+    return Udp_socket{rio::handle(raw_fd)};
+}
+auto Udp_socket<udp_state::bound>::attach(int raw_fd) -> Udp_socket
 {
     return Udp_socket{rio::handle(raw_fd)};
 }
 
-Udp_socket::operator bool() const
+auto bind(Udp_socket<udp_state::unbound> &&s, const address &addr) -> result<Udp_socket<udp_state::bound>>
 {
-    return static_cast<bool>(fd);
+    return std::move(s).bind(addr);
 }
 
-export auto bind(Udp_socket &s, const address &addr) -> result<void>
+auto connect(Udp_socket<udp_state::unbound> &&s, const address &addr) -> result<Udp_socket<udp_state::bound>>
 {
-    if (::bind(s.fd.native_handle(), addr.data(), addr.size()) == -1) [[unlikely]] {
-        return std::unexpected(Err{errno, "Failed to bind UDP socket"});
-    }
-    return {};
+    return std::move(s).connect(addr);
 }
 
-export auto connect(Udp_socket &s, const address &addr) -> result<void>
-{
-    if (::connect(s.fd.native_handle(), addr.data(), addr.size()) == -1) [[unlikely]] {
-        return std::unexpected(Err{errno, "Failed to connect UDP socket"});
-    }
-    return {};
-}
-
-auto Udp_socket::open(udp_opt options) -> result<Udp_socket>
+auto Udp_socket<udp_state::unbound>::open(udp_opt options) -> result<Udp_socket>
 {
     if (has(options, udp_opt::v4) && has(options, udp_opt::v6)) {
         return std::unexpected(Err{EINVAL, "Cannot specify both IPv4 and IPv6"});
@@ -164,21 +266,19 @@ auto Udp_socket::open(udp_opt options) -> result<Udp_socket>
     return Udp_socket::attach(s);
 }
 
-auto Udp_socket::open_and_bind(const rio::address &addr, udp_opt options) -> result<Udp_socket>
+auto Udp_socket<udp_state::unbound>::open_and_bind(const rio::address &addr, udp_opt options)
+    -> result<Udp_socket<udp_state::bound>>
 {
     auto o_res = open(options);
     if (!o_res) [[unlikely]] {
         return std::unexpected(o_res.error());
     }
 
-    if (auto res = bind(*o_res, addr); !res) [[unlikely]] {
-        return std::unexpected(res.error());
-    }
-
-    return o_res;
+    return rio::bind(std::move(*o_res), addr);
 }
 
-auto Udp_socket::open_and_bind(const char *ip, uint16_t port, udp_opt options) -> result<std::tuple<Udp_socket, rio::address>>
+auto Udp_socket<udp_state::unbound>::open_and_bind(const char *ip, uint16_t port, udp_opt options)
+    -> result<std::tuple<Udp_socket<udp_state::bound>, rio::address>>
 {
     auto addr = rio::address::from_ip(ip, port);
     if (!addr) [[unlikely]] {
@@ -198,16 +298,6 @@ auto Udp_socket::open_and_bind(const char *ip, uint16_t port, udp_opt options) -
     }
 
     return std::make_tuple(std::move(*o_res), std::move(*addr));
-}
-
-auto Udp_socket::local_endpoint() const -> result<rio::address>
-{
-    rio::address addr;
-    addr.len = sizeof(addr.storage);
-    if (::getsockname(fd.native_handle(), &addr.storage.general, &addr.len) == -1) {
-        return std::unexpected(Err{errno, "getsockname failed"});
-    }
-    return addr;
 }
 
 } // namespace rio
