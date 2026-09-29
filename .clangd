@@ -20,10 +20,13 @@ CompileFlags:
   Add:
     - -x
     - c++-module
-
+---
+# bld.cpp is a host tool, not a project TU: the new b_ldr.hpp needs
+# <generator>, which this box's libc++ does not ship. Parse it with the
+# default stdlib (libstdc++), like the `clang++ ./bld.cpp -o bld` build.
 If:
-  PathMatch: .*\.c
+  PathMatch: bld\.cpp
 
 CompileFlags:
-  Add:
-    - -std=c23
+  Remove:
+    - -stdlib=libc++

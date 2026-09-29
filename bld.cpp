@@ -1,430 +1,569 @@
+// bld.cpp — rio build script.
+//
+//   ./bld [-j N] [-build-all] [-build-std] [-std] [-run] [-build-examples]
+//         [-compile src -o out] [-clean] [-clean-all] [-clean-example]
+//
+// Incremental by default: module PCMs/objs/libs/exe form a dependency
+// graph (bld::Plan) so only stale tasks run.
+
 #include <algorithm>
-#include <cstdlib>
 #include <filesystem>
-#include <fstream>
+#include <format>
 #include <iostream>
+#include <optional>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
 #define B_LDR_IMPLEMENTATION
-#define BLD_NO_COLORS
 #include "b_ldr.hpp"
 
-namespace fs = std::filesystem;
-auto &bld_cfg = bld::Config::get();
+namespace {
 
-// Configuration
-struct Config
-{
-    // Directories
-    const fs::path dir_src = "src/";
-    const fs::path dir_bin = "bin/";
-    const fs::path dir_pcm = "bin/pcms/";
-    const fs::path dir_obj = "bin/objs/";
-    const fs::path dir_std = "bin/std/";
-    const fs::path dir_libs = "bin/libs/";
+namespace stdfs = std::filesystem;
 
-    const fs::path dir_example_bin = "bin-example/";
+struct Config {
+    const stdfs::path dir_src = "src/";
+    const stdfs::path dir_bin = "bin/";
+    const stdfs::path dir_pcm = "bin/pcms/";
+    const stdfs::path dir_obj = "bin/objs/";
+    const stdfs::path dir_std = "bin/std/";
+    const stdfs::path dir_libs = "bin/libs/";
+    const stdfs::path dir_example_bin = "bin-example/";
 
-    // Artifacts
     const std::string exe_name = "rio";
     const std::string lib_static = "librio.a";
     const std::string lib_shared = "librio.so";
     const std::string main_src = "main.cpp";
 
-    // Tools
     const std::string compiler = "clang++";
     const std::string archiver = "ar";
 
-    // Flags - Enforce libc++ globally
+    // Enforce libc++ globally.
     const std::vector<std::string> flags_common = {"-std=c++23", "-Wall", "-Wextra", "-O2", "-fPIC", "-g"};
-    // Linker Flags
     const std::vector<std::string> flags_linker = {"-stdlib=libc++", "-luring", "-lc++abi"};
 
-    std::vector<std::string> get_mod_paths() const
+    [[nodiscard]] auto mod_paths() const -> std::vector<std::string>
     {
         return {"-fprebuilt-module-path=" + dir_pcm.string(), "-fprebuilt-module-path=" + dir_std.string()};
     }
 };
 
-struct Module
-{
-    bld::fs::Cpp_module module;
-    std::string safe_name() const
+struct Module {
+    bld::fs::Cpp_module inner;
+    [[nodiscard]] auto safe_name() const -> std::string
     {
-        std::string s = module.name;
+        std::string s = inner.name;
         std::replace(s.begin(), s.end(), ':', '-');
         return s;
     }
-    fs::path pcm(const Config &cfg) const
+    [[nodiscard]] auto pcm(const Config &cfg) const -> stdfs::path
     {
         return cfg.dir_pcm / (safe_name() + ".pcm");
     }
-    fs::path obj(const Config &cfg) const
+    [[nodiscard]] auto obj(const Config &cfg) const -> stdfs::path
     {
         return cfg.dir_obj / (safe_name() + ".o");
     }
 };
 
-struct CompilationEntry
+// Option keys are dash-insensitive in this library version ("-j", "--j"
+// and "j" are one key), so argv passes straight through to parse().
+auto parse_cli(int argc, char *argv[]) -> std::expected<bld::Config::Parse_outcome, bld::Err>
 {
-    std::string directory;
-    std::string command;
-    std::string file;
-};
-
-// Helpers
-bld::Command make_cmd(const std::vector<std::string> &parts)
-{
-    bld::Command cmd;
-    cmd.parts = parts;
-    return cmd;
+    auto &cfg = bld::Config::get();
+    cfg.add_option("clean", bld::Config::Bool, "Remove libs/objs/pcms", false)
+        .add_option("clean-all", bld::Config::Bool, "Remove bin dir", false)
+        .add_option("clean-example", bld::Config::Bool, "Remove example binaries", false)
+        .add_option("std", bld::Config::Bool, "Rebuild std module only", false)
+        .add_option("build-std", bld::Config::Bool, "Force std module rebuild", false)
+        .add_option("build-all", bld::Config::Bool, "Force full rebuild", false)
+        .add_option("run", bld::Config::Bool, "Run executable after build", false)
+        .add_option("build-examples", bld::Config::Bool, "Build examples", false)
+        .add_option("j", bld::Config::Int, "Parallel jobs (default: auto)", 0)
+        .add_option("compile", bld::Config::String, "Compile single file", std::string(""))
+        .add_option("o", bld::Config::String, "Output file for compile", std::string(""));
+    return cfg.parse(argc, argv);
 }
 
-void emit_json(const std::vector<CompilationEntry> &entries)
+[[nodiscard]] auto flag(std::string_view key) -> bool
 {
-    std::ofstream out("compile_commands.json");
-    out << "[\n";
-    for (size_t i = 0; i < entries.size(); ++i) {
-        out << "  {\n";
-        out << "    \"directory\": \"" << fs::current_path().string() << "\",\n";
-        out << "    \"command\": \"" << entries[i].command << "\",\n";
-        out << "    \"file\": \"" << fs::absolute(entries[i].file).string() << "\"\n";
-        out << "  }" << (i == entries.size() - 1 ? "" : ",") << "\n";
-    }
-    out << "]\n";
+    return static_cast<bool>(bld::Config::get()[key]);
 }
 
-// STD Module Builder
-const std::string CACHE_FILE = ".bld_std_path";
-
-std::optional<fs::path> find_std_cppm()
+[[nodiscard]] auto opt_str(std::string_view key) -> std::string
 {
-    if (fs::exists(CACHE_FILE)) {
-        std::ifstream in(CACHE_FILE);
-        std::string s;
-        if (std::getline(in, s) && fs::exists(s)) {
-            return fs::path(s);
-        }
+    const auto &cfg = bld::Config::get();
+    if (auto v = cfg.get_val<std::string>(key); v) {
+        return *v;
     }
-    std::vector<fs::path> roots =
-        {"/usr/lib/llvm-19/share/libc++/v1", "/usr/lib/llvm-18/share/libc++/v1", "/usr/share/libc++/v1", "/usr/local/share", "/opt/homebrew"};
-    for (const auto &r : roots) {
-        if (!fs::exists(r)) {
+    if (auto v = cfg.get_val<int>(key); v) {
+        return std::to_string(*v);
+    }
+    if (auto v = cfg.get_val<double>(key); v) {
+        return std::to_string(*v);
+    }
+    return "";
+}
+
+// Positive -j N, otherwise nullopt (library default: one core free).
+[[nodiscard]] auto opt_jobs() -> std::optional<std::size_t>
+{
+    if (auto v = bld::Config::get().get_val<int>("j"); v && *v > 0) {
+        return static_cast<std::size_t>(*v);
+    }
+    return std::nullopt;
+}
+
+auto run_ok(const bld::Cmd &cmd) -> std::expected<void, bld::Err>
+{
+    auto proc = bld::run(cmd);
+    if (!proc) {
+        return std::unexpected(proc.error());
+    }
+    if (proc->status_code() != 0) {
+        return std::unexpected(
+            bld::Err::erc(std::errc::operation_canceled, std::format("command {:?} exited with code {}", cmd, proc->status_code())));
+    }
+    return {};
+}
+
+// Base compile command: compiler + common flags.
+[[nodiscard]] auto cxx(const Config &cfg) -> bld::Cmd
+{
+    bld::Cmd c{cfg.compiler};
+    for (const auto &f : cfg.flags_common) {
+        c.push(f);
+    }
+    return c;
+}
+
+constexpr std::string_view CACHE_FILE = ".bld_std_path";
+constexpr std::string_view STD_PCM = "std.pcm";
+
+[[nodiscard]] auto search_root(const stdfs::path &root) -> std::optional<stdfs::path>
+{
+    if (!bld::fs::exists(root.string())) {
+        return std::nullopt;
+    }
+    std::optional<stdfs::path> hit;
+    bld::fs::Controller ctl;
+    for (const auto &e : bld::fs::walk_dir(root.string(), ctl)) {
+        if (e.is_dir()) {
+            // Prune branches that cannot host libc++ sources.
+            const std::string p = e.path.string();
+            if (p.find("include") == std::string::npos && p.find("c++") == std::string::npos && p.find("v1") == std::string::npos) {
+                ctl.dont_recurse = true;
+            }
             continue;
         }
-        auto opts = fs::directory_options::skip_permission_denied;
-        std::error_code ec;
-        for (auto it = fs::recursive_directory_iterator(r, opts, ec); it != fs::recursive_directory_iterator(); it.increment(ec)) {
-            if (ec) {
-                continue;
-            }
-            if (it->is_directory()) {
-                std::string p = it->path().string();
-                if (p.find("include") == std::string::npos && p.find("c++") == std::string::npos && p.find("v1") == std::string::npos) {
-                    it.disable_recursion_pending();
-                }
-                continue;
-            }
-            if (it->path().filename() == "std.cppm") {
-                return it->path();
-            }
+        if (e.filename() == "std.cppm") {
+            hit = e.path;
+            break;
+        }
+    }
+    if (ctl.failed()) {
+        bld::log::w("std.cppm search under '{}' failed: {}", root.string(), ctl.error().message());
+    }
+    return hit;
+}
+
+[[nodiscard]] auto find_std_cppm() -> std::optional<stdfs::path>
+{
+    if (auto cached = bld::fs::read_file(CACHE_FILE); cached && bld::fs::exists(*cached)) {
+        return stdfs::path{*cached};
+    }
+    for (const char *root :
+         {"/usr/lib/llvm-19/share/libc++/v1", "/usr/lib/llvm-18/share/libc++/v1", "/usr/share/libc++/v1", "/usr/local/share", "/opt/homebrew"}) {
+        if (auto hit = search_root(stdfs::path{root})) {
+            std::ignore = bld::fs::write_file(CACHE_FILE, hit->string()); // cache for next time
+            return hit;
         }
     }
     return std::nullopt;
 }
 
-bool build_std_module(const Config &cfg, bool force = false)
+auto ensure_std(const Config &cfg, bool force) -> std::expected<void, bld::Err>
 {
-    if (!force) {
-        if ((!bld_cfg["build-std"] && fs::exists(cfg.dir_std / "std.pcm") && !bld_cfg["build-all"])) {
-            return true;
-        }
+    const std::string pcm = (cfg.dir_std / STD_PCM).string();
+    if (!force && !flag("build-std") && !flag("build-all") && bld::fs::exists(pcm)) {
+        return {};
     }
 
-    bld::log(bld::Log_type::INFO, "Building Standard Module...");
-    auto std_cppm_opt = find_std_cppm();
-
-    if (!std_cppm_opt) {
-        bld::log(bld::Log_type::WARNING, "Could not find 'std.cppm'.");
+    bld::log::i("Building standard module...");
+    auto cppm = find_std_cppm();
+    if (!cppm) {
+        bld::log::w("Could not find 'std.cppm'.");
         std::cout << "Path to std.cppm: ";
         std::string input;
         std::getline(std::cin, input);
         if (input.size() >= 2 && input.front() == '"') {
             input = input.substr(1, input.size() - 2);
         }
-        if (fs::exists(input)) {
-            std_cppm_opt = input;
-            std::ofstream out(CACHE_FILE);
-            out << input;
-        } else {
-            return false;
+        if (!bld::fs::exists(input)) {
+            return std::unexpected(bld::Err::erc(std::errc::no_such_file_or_directory, "std.cppm not found"));
         }
+        std::ignore = bld::fs::write_file(CACHE_FILE, input);
+        cppm = stdfs::path{input};
     }
 
-    fs::path std_cppm = *std_cppm_opt;
-    fs::create_directories(cfg.dir_std);
-
-    std::vector<std::string> args = {cfg.compiler};
-    args.insert(args.end(), cfg.flags_common.begin(), cfg.flags_common.end());
-    args.push_back("-stdlib=libc++");
-    std::vector<std::string> cmd1 = args;
-    cmd1.insert(cmd1.end(), {"--precompile", std_cppm.string(), "-o", (cfg.dir_std / "std.pcm").string()});
-    if (!bld::execute(make_cmd(cmd1)).normal) {
-        return false;
+    if (!bld::fs::make_dirs(cfg.dir_std.string())) {
+        return std::unexpected(bld::Err::erc(std::errc::io_error, "cannot create std dir"));
     }
 
-    fs::path compat = std_cppm.parent_path() / "std.compat.cppm";
-    if (fs::exists(compat)) {
-        std::vector<std::string> cmd2 = args;
-        cmd2.push_back("-fprebuilt-module-path=" + cfg.dir_std.string() + "/");
-        cmd2.insert(cmd2.end(), {"--precompile", compat.string(), "-o", (cfg.dir_std / "std.compat.pcm").string()});
-        bld::execute(make_cmd(cmd2));
+    bld::Cmd pre = cxx(cfg);
+    pre.push("-stdlib=libc++");
+    pre.push("--precompile");
+    pre.push(cppm->string());
+    pre.push("-o");
+    pre.push(pcm);
+    if (auto r = run_ok(pre); !r) {
+        return r;
     }
-    return true;
+
+    if (const auto compat = cppm->parent_path() / "std.compat.cppm"; bld::fs::exists(compat.string())) {
+        bld::Cmd cc = cxx(cfg);
+        cc.push("-stdlib=libc++");
+        cc.push("-fprebuilt-module-path=" + cfg.dir_std.string() + "/");
+        cc.push("--precompile");
+        cc.push(compat.string());
+        cc.push("-o");
+        cc.push((cfg.dir_std / "std.compat.pcm").string());
+        std::ignore = run_ok(cc);
+    }
+    return {};
 }
 
-bld::Proc build_file_async(std::string input, std::string output, const Config &cfg)
+// One representative task: command + inputs + output (+ compile-db mark).
+auto link_step(
+    bld::Plan &plan,
+    const std::string &name,
+    bld::Cmd cmd,
+    const std::vector<std::string> &inputs,
+    const std::string &output,
+    bool compile_command = false) -> void
 {
-    bld::Command cmd = make_cmd({cfg.compiler});
-    cmd.add_parts("-o", output, input);
-    cmd.add_parts(cfg.dir_libs.string() + cfg.lib_static);
-    cmd.parts.append_range(cfg.flags_common);
-    cmd.parts.append_range(cfg.get_mod_paths());
-    cmd.parts.append_range(cfg.flags_linker);
-    return bld::execute_async(cmd);
+    plan.add(name, std::move(cmd));
+    for (const auto &in : inputs) {
+        plan.needs(name, in);
+    }
+    plan.produces(name, output);
+    if (compile_command) {
+        plan.mark_compile_command(name);
+    }
 }
 
-bool build_file(std::string input, std::string output, const Config &cfg)
+[[nodiscard]] auto collect_modules(const Config &cfg) -> std::expected<std::vector<Module>, bld::Err>
 {
-    bld::Command cmd = make_cmd({cfg.compiler});
-    cmd.add_parts("-o", output, input);
-    cmd.add_parts(cfg.dir_libs.string() + cfg.lib_static);
-    cmd.parts.append_range(cfg.flags_common);
-    cmd.parts.append_range(cfg.get_mod_paths());
-    cmd.parts.append_range(cfg.flags_linker);
-    return bld::execute(cmd);
+    std::vector<Module> mods;
+    for (auto &m : bld::fs::scan_modules(cfg.dir_src.string())) {
+        mods.push_back(Module{m});
+    }
+    if (mods.empty()) {
+        return std::unexpected(bld::Err::erc(std::errc::no_such_file_or_directory, std::format("no modules found in {}", cfg.dir_src.string())));
+    }
+    return mods;
 }
 
-int build_examples(Config cfg, std::string path = "./examples/")
+// jobs{} means "library default"; only pass an explicit budget when set.
+auto run_graph(bld::Plan &plan, std::optional<std::size_t> jobs, bool force, std::string_view db = "")
+    -> std::expected<bld::Run_result, bld::Err>
 {
-    std::string output_dir = cfg.dir_example_bin;
-    bld::fs::create_dir_if_not_exists(output_dir);
+    if (jobs && force && !db.empty()) {
+        return bld::run(plan, bld::jobs{*jobs}, bld::force{}, bld::write_compile_commands{db});
+    }
+    if (jobs && force) {
+        return bld::run(plan, bld::jobs{*jobs}, bld::force{});
+    }
+    if (jobs && !db.empty()) {
+        return bld::run(plan, bld::jobs{*jobs}, bld::write_compile_commands{db});
+    }
+    if (jobs) {
+        return bld::run(plan, bld::jobs{*jobs});
+    }
+    if (force && !db.empty()) {
+        return bld::run(plan, bld::force{}, bld::write_compile_commands{db});
+    }
+    if (force) {
+        return bld::run(plan, bld::force{});
+    }
+    if (!db.empty()) {
+        return bld::run(plan, bld::write_compile_commands{db});
+    }
+    return bld::run(plan);
+}
 
-    std::vector<bld::Proc> procs;
-    std::vector<std::string> files;
+auto build_main(const Config &cfg, std::optional<std::size_t> jobs, bool force) -> std::expected<void, bld::Err>
+{
+    if (!bld::fs::make_dirs(cfg.dir_pcm.string(), cfg.dir_obj.string(), cfg.dir_std.string(), cfg.dir_bin.string(), cfg.dir_libs.string())) {
+        return std::unexpected(bld::Err::erc(std::errc::io_error, "cannot create build dirs"));
+    }
+    if (auto r = ensure_std(cfg, force); !r) {
+        return r;
+    }
 
-    bld::fs::walk_directory(path, [&](bld::fs::Walk_fn_opt &opt) -> bool {
-        if (std::filesystem::is_directory(opt.path)) {
-            return true;
+    auto mods_res = collect_modules(cfg);
+    if (!mods_res) {
+        return std::unexpected(mods_res.error());
+    }
+    const auto &mods = *mods_res;
+
+    std::unordered_map<std::string, std::string> providers;
+    for (const auto &m : mods) {
+        providers[m.inner.name] = m.pcm(cfg).string();
+    }
+
+    bld::Plan plan;
+    std::vector<std::string> objs;
+    objs.reserve(mods.size());
+    const std::string std_pcm = (cfg.dir_std / STD_PCM).string();
+    const auto inc = cfg.mod_paths();
+
+    for (const auto &m : mods) {
+        const std::string src = m.inner.file.string();
+        const std::string pcm = m.pcm(cfg).string();
+        const std::string obj = m.obj(cfg).string();
+
+        bld::Cmd pre = cxx(cfg);
+        pre.push("-stdlib=libc++");
+        pre.push("--precompile");
+        pre.push(src);
+        pre.push("-o");
+        pre.push(pcm);
+        for (const auto &p : inc) {
+            pre.push(p);
         }
-        if (opt.path.extension() != ".cpp") {
-            return true;
-        }
-        std::filesystem::path relative_path = std::filesystem::relative(opt.path, path);
-        std::string actual_file = relative_path.string();
-        auto output_path = output_dir + "/" + actual_file;
-        files.push_back(opt.path.string());
-        bld::log(bld::Log_type::INFO, "Building: " + opt.path.string());
-        procs.push_back(build_file_async(opt.path.string(), output_path.substr(0, output_path.size() - std::string(".cpp").size()), cfg));
-        return true;
-    });
 
-    auto res = bld::wait_procs(procs);
-    if (res.failed_indices.size() > 0) {
-        bld::log(bld::Log_type::ERR, "\n");
-        bld::log(bld::Log_type::ERR, "Failed:");
-        for (auto failed : res.failed_indices) {
-            bld::log(bld::Log_type::ERR, "    " + files[failed]);
+        const std::string pt = "pcm:" + m.inner.name;
+        plan.add(pt, std::move(pre));
+        plan.needs(pt, src);
+        plan.needs(pt, std_pcm);
+        for (const auto &dep : m.inner.imports) {
+            if (dep == m.inner.name) {
+                continue; // self-import picked up from a comment
+            }
+            if (auto it = providers.find(dep); it != providers.end()) {
+                plan.needs(pt, it->second);
+            } else {
+                bld::log::w("Module '{}' imports '{}' (not found)", m.inner.name, dep);
+            }
         }
+        plan.produces(pt, pcm);
+        plan.mark_compile_command(pt);
 
+        bld::Cmd cc = cxx(cfg);
+        cc.push("-c");
+        cc.push(pcm);
+        cc.push("-o");
+        cc.push(obj);
+        for (const auto &p : inc) {
+            cc.push(p);
+        }
+        const std::string ot = "obj:" + m.inner.name;
+        link_step(plan, ot, std::move(cc), {pcm}, obj);
+        objs.push_back(obj);
+    }
+
+    const std::string static_lib = (cfg.dir_libs / cfg.lib_static).string();
+    bld::Cmd ar{cfg.archiver, "rcs", static_lib};
+    for (const auto &o : objs) {
+        ar.push(o);
+    }
+    link_step(plan, "lib-static", std::move(ar), objs, static_lib);
+
+    const std::string shared_lib = (cfg.dir_libs / cfg.lib_shared).string();
+    bld::Cmd so{cfg.compiler, "-shared", "-o", shared_lib};
+    for (const auto &f : cfg.flags_common) {
+        so.push(f);
+    }
+    for (const auto &o : objs) {
+        so.push(o);
+    }
+    for (const auto &f : cfg.flags_linker) {
+        so.push(f);
+    }
+    link_step(plan, "lib-shared", std::move(so), objs, shared_lib);
+
+    if (bld::fs::exists(cfg.main_src)) {
+        const std::string exe = (cfg.dir_bin / cfg.exe_name).string();
+        bld::Cmd link = cxx(cfg);
+        link.push(cfg.main_src);
+        for (const auto &o : objs) {
+            link.push(o);
+        }
+        link.push("-o");
+        link.push(exe);
+        for (const auto &p : inc) {
+            link.push(p);
+        }
+        for (const auto &f : cfg.flags_linker) {
+            link.push(f);
+        }
+        std::vector<std::string> inputs{cfg.main_src};
+        inputs.insert(inputs.end(), objs.begin(), objs.end());
+        link_step(plan, "exe", std::move(link), inputs, exe, true);
+    }
+
+    bld::log::i("Building with {} threads...", bld::resolve_parallel_width(jobs));
+    if (auto res = run_graph(plan, jobs, force, "compile_commands.json"); !res) {
+        return std::unexpected(res.error());
+    } else {
+        bld::log::i("Build successful ({} ran, {} up to date).", res->ran, res->skipped);
+    }
+    return {};
+}
+
+// Examples are independent leaf tasks in a Plan, so the scheduler orders
+// and skips them incrementally (a bare task span always runs everything).
+auto build_examples(const Config &cfg, std::optional<std::size_t> jobs, std::string_view dir = "./examples/")
+    -> std::expected<void, bld::Err>
+{
+    const std::string lib = (cfg.dir_libs / cfg.lib_static).string();
+    const auto inc = cfg.mod_paths();
+    bld::Plan plan;
+
+    bld::fs::Controller ctl;
+    for (const auto &e : bld::fs::walk_dir(dir, ctl) | bld::fs::only_files | bld::fs::only_extensions("cpp")) {
+        const std::string src = e.path.string();
+        auto rel = bld::fs::relative(src, dir);
+        if (!rel) {
+            return std::unexpected(rel.error());
+        }
+        std::string out = (cfg.dir_example_bin / *rel).string();
+        out = out.substr(0, out.size() - std::string(".cpp").size());
+        std::ignore = bld::fs::make_dirs(bld::fs::parent_dir(out));
+
+        bld::Cmd c{cfg.compiler};
+        c.push("-o");
+        c.push(out);
+        c.push(src);
+        c.push(lib);
+        for (const auto &f : cfg.flags_common) {
+            c.push(f);
+        }
+        for (const auto &p : inc) {
+            c.push(p);
+        }
+        for (const auto &f : cfg.flags_linker) {
+            c.push(f);
+        }
+        plan.add(out, std::move(c));
+        plan.needs(out, src);
+        plan.needs(out, lib);
+        plan.produces(out, out);
+    }
+    if (ctl.failed()) {
+        return std::unexpected(bld::Err::erc(std::errc::io_error, "cannot scan examples: " + ctl.error().message()));
+    }
+
+    if (plan.tasks.empty()) {
+        bld::log::i("No examples found.");
+        return {};
+    }
+    bld::log::i("Building {} examples...", plan.tasks.size());
+    if (auto res = run_graph(plan, jobs, false); !res) {
+        return std::unexpected(res.error());
+    } else {
+        bld::log::i("Examples OK ({} built, {} up to date).", res->ran, res->skipped);
+    }
+    return {};
+}
+
+auto compile_one(const Config &cfg, std::string_view src, std::string_view out) -> std::expected<void, bld::Err>
+{
+    bld::Cmd c{cfg.compiler};
+    c.push("-o");
+    c.push(out);
+    c.push(src);
+    c.push((cfg.dir_libs / cfg.lib_static).string());
+    for (const auto &f : cfg.flags_common) {
+        c.push(f);
+    }
+    for (const auto &p : cfg.mod_paths()) {
+        c.push(p);
+    }
+    for (const auto &f : cfg.flags_linker) {
+        c.push(f);
+    }
+    return run_ok(c);
+}
+
+auto run_exe(const Config &cfg) -> int
+{
+    const std::string exe = (cfg.dir_bin / cfg.exe_name).string();
+    if (!bld::fs::exists(exe)) {
+        bld::log::e("Executable not found. Build first.");
         return 1;
     }
-
-    bld::log(bld::Log_type::INFO, "All built successfully");
-
-    std::cerr.flush();
-    std::cout.flush();
-
-    return 0;
+    auto proc = bld::run(bld::Cmd{exe});
+    if (!proc) {
+        bld::log::e("Failed to run executable: {}", proc.error());
+        return 1;
+    }
+    return proc->status_code();
 }
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
-    BLD_REBUILD_YOURSELF_ONCHANGE();
-    BLD_HANDLE_ARGS();
-    Config cfg;
-
-    if (bld_cfg["clean"]) {
-        bld::fs::remove_dir(cfg.dir_libs);
-        bld::fs::remove_dir(cfg.dir_obj);
-        bld::fs::remove_dir(cfg.dir_pcm);
-        return 0;
-    }
-    if (bld_cfg["clean-all"]) {
-        bld::fs::remove_dir(cfg.dir_bin);
-        return 0;
-    }
-    if (bld_cfg["clean-example"]) {
-        bld::fs::remove_dir(cfg.dir_example_bin);
-        return 0;
-    }
-    if (bld_cfg["std"]) {
-        return build_std_module(cfg, true) ? 0 : 1;
-    }
-
-    // --- SETUP ---
-    fs::create_directories(cfg.dir_pcm);
-    fs::create_directories(cfg.dir_obj);
-    fs::create_directories(cfg.dir_std);
-    fs::create_directories(cfg.dir_bin);
-    fs::create_directories(cfg.dir_libs);
-
-    if (!build_std_module(cfg)) {
+    if (auto r = bld::rebuild_this_when_needed_ext(argc, argv); !r) {
+        bld::log::e("Failed to rebuild build script: {}", r.error());
         return 1;
     }
-
-    std::vector<Module> modules;
-
-    for (auto m : bld::fs::scan_modules(cfg.dir_src)) {
-        modules.push_back(Module{m});
-    }
-
-    if (modules.empty()) {
-        bld::log(bld::Log_type::ERR, "No modules found in " + cfg.dir_src.string());
+    if (auto parsed = parse_cli(argc, argv); !parsed) {
+        bld::log::e("Failed to parse args: {}", parsed.error());
         return 1;
+    } else if (parsed->help_requested) {
+        return 0;
     }
 
-    // 2. Map
-    std::unordered_map<std::string, std::string> mod_map;
-    for (const auto &m : modules) {
-        mod_map[m.module.name] = m.pcm(cfg).string();
+    const Config cfg;
+    if (flag("clean")) {
+        std::ignore = bld::fs::remove(cfg.dir_libs.string(), cfg.dir_obj.string(), cfg.dir_pcm.string());
+        return 0;
     }
-
-    // 3. Build Graph
-    bld::Dep_graph graph;
-    std::vector<CompilationEntry> json_entries;
-    std::vector<std::string> all_objs;
-    auto mod_paths = cfg.get_mod_paths();
-
-    for (const auto &mod : modules) {
-        // A. PCM
-        std::vector<std::string> pcm_deps = {mod.module.file.string()};
-        if (fs::exists(cfg.dir_std / "std.pcm")) {
-            pcm_deps.push_back((cfg.dir_std / "std.pcm").string());
-        }
-
-        for (const auto &d : mod.module.imports) {
-            if (mod_map.contains(d)) {
-                pcm_deps.push_back(mod_map[d]);
-            } else {
-                bld::log(bld::Log_type::WARNING, "Module '" + mod.module.name + "' imports '" + d + "' (not found)");
-            }
-        }
-
-        std::vector<std::string> cmd_pcm = {cfg.compiler};
-        cmd_pcm.insert(cmd_pcm.end(), cfg.flags_common.begin(), cfg.flags_common.end());
-        cmd_pcm.push_back("-stdlib=libc++");
-        cmd_pcm.push_back("--precompile");
-        cmd_pcm.push_back(mod.module.file.string());
-        cmd_pcm.push_back("-o");
-        cmd_pcm.push_back(mod.pcm(cfg).string());
-        cmd_pcm.insert(cmd_pcm.end(), mod_paths.begin(), mod_paths.end());
-
-        bld::Command c_pcm = make_cmd(cmd_pcm);
-        graph.add_dep(bld::Dep(mod.pcm(cfg).string(), pcm_deps, c_pcm));
-        json_entries.push_back({cfg.dir_src.string(), c_pcm.get_command_string(), mod.module.file.string()});
-
-        // B. OBJ
-        std::vector<std::string> obj_deps = {mod.pcm(cfg).string()};
-        std::vector<std::string> cmd_obj = {cfg.compiler};
-        cmd_obj.insert(cmd_obj.end(), cfg.flags_common.begin(), cfg.flags_common.end());
-        cmd_obj.push_back("-c");
-        cmd_obj.push_back(mod.pcm(cfg).string());
-        cmd_obj.push_back("-o");
-        cmd_obj.push_back(mod.obj(cfg).string());
-        cmd_obj.insert(cmd_obj.end(), mod_paths.begin(), mod_paths.end());
-
-        bld::Command c_obj = make_cmd(cmd_obj);
-        graph.add_dep(bld::Dep(mod.obj(cfg).string(), obj_deps, c_obj));
-        all_objs.push_back(mod.obj(cfg).string());
+    if (flag("clean-all")) {
+        std::ignore = bld::fs::remove(cfg.dir_bin.string());
+        return 0;
     }
-
-    // C. Libs
-    std::string static_lib = (cfg.dir_libs / cfg.lib_static).string();
-    std::vector<std::string> ar_cmd = {cfg.archiver, "rcs", static_lib};
-    ar_cmd.insert(ar_cmd.end(), all_objs.begin(), all_objs.end());
-    graph.add_dep(bld::Dep(static_lib, all_objs, make_cmd(ar_cmd)));
-
-    std::string shared_lib = (cfg.dir_libs / cfg.lib_shared).string();
-    std::vector<std::string> so_cmd = {cfg.compiler, "-shared", "-o", shared_lib};
-    so_cmd.insert(so_cmd.end(), cfg.flags_common.begin(), cfg.flags_common.end());
-    so_cmd.insert(so_cmd.end(), all_objs.begin(), all_objs.end());
-    so_cmd.insert(so_cmd.end(), cfg.flags_linker.begin(), cfg.flags_linker.end());
-    graph.add_dep(bld::Dep(shared_lib, all_objs, make_cmd(so_cmd)));
-
-    // D. Exe
-    std::string exe_path = (cfg.dir_bin / cfg.exe_name).string();
-    if (fs::exists(cfg.main_src)) {
-        std::vector<std::string> exe_deps = {cfg.main_src};
-        exe_deps.insert(exe_deps.end(), all_objs.begin(), all_objs.end());
-
-        std::vector<std::string> link_cmd = {cfg.compiler};
-        link_cmd.insert(link_cmd.end(), cfg.flags_common.begin(), cfg.flags_common.end());
-        link_cmd.push_back(cfg.main_src);
-        link_cmd.insert(link_cmd.end(), all_objs.begin(), all_objs.end());
-        link_cmd.push_back("-o");
-        link_cmd.push_back(exe_path);
-        link_cmd.insert(link_cmd.end(), mod_paths.begin(), mod_paths.end());
-        link_cmd.insert(link_cmd.end(), cfg.flags_linker.begin(), cfg.flags_linker.end());
-
-        bld::Command c_link = make_cmd(link_cmd);
-        graph.add_dep(bld::Dep(exe_path, exe_deps, c_link));
-        json_entries.push_back({fs::current_path().string(), c_link.get_command_string(), cfg.main_src});
+    if (flag("clean-example")) {
+        std::ignore = bld::fs::remove(cfg.dir_example_bin.string());
+        return 0;
     }
-
-    // --- EXECUTE ---
-    std::vector<std::string> final_targets = {static_lib, shared_lib};
-    if (fs::exists(cfg.main_src)) {
-        final_targets.push_back(exe_path);
-    }
-    graph.add_phony("all", final_targets);
-
-    size_t threads = bld_cfg["j"];
-    if (threads == 0) {
-        threads = std::thread::hardware_concurrency();
-    }
-
-    bld::log(bld::Log_type::INFO, "Building with " + std::to_string(threads) + " threads...");
-
-    if (graph.build_parallel("all", 7)) {
-        bld::log(bld::Log_type::INFO, "Build Successful.");
-        emit_json(json_entries);
-    } else {
-        bld::log(bld::Log_type::ERR, "Build Failed.");
-        return 1;
-    }
-
-    if (bld_cfg["run"]) {
-        std::string cmd = (cfg.dir_bin / cfg.exe_name).string();
-        if (!fs::exists(cmd)) {
-            bld::log(bld::Log_type::ERR, "Executable not found. Build first.");
+    if (flag("std")) {
+        if (auto r = ensure_std(cfg, true); !r) {
+            bld::log::e("std build failed: {}", r.error());
             return 1;
         }
-        return std::system(cmd.c_str());
+        return 0;
     }
 
-    if (bld_cfg["build-examples"]) {
-        return build_examples(cfg, "./examples/");
+    const auto jobs = opt_jobs();
+    const bool force = flag("build-all");
+    if (auto r = build_main(cfg, jobs, force); !r) {
+        bld::log::e("Build failed: {}", r.error());
+        return 1;
     }
 
-    if (bld_cfg["compile"]) {
-        if (!bld_cfg["o"]) {
-            bld::log(bld::Log_type::ERR, "You must provide output file using '-o' flag.");
+    if (flag("run")) {
+        return run_exe(cfg);
+    }
+    if (flag("build-examples")) {
+        if (auto r = build_examples(cfg, jobs); !r) {
+            bld::log::e("Examples failed: {}", r.error());
             return 1;
         }
-        return build_file(bld_cfg["compile"], bld_cfg["o"], cfg) ? 0 : 1;
+        return 0;
     }
+    if (const auto src = opt_str("compile"); !src.empty()) {
+        if (const auto out = opt_str("o"); out.empty()) {
+            bld::log::e("You must provide output file using '-o' flag.");
+            return 1;
+        } else if (auto r = compile_one(cfg, src, out); !r) {
+            bld::log::e("Compile failed: {}", r.error());
+            return 1;
+        }
+    }
+    return 0;
 }
