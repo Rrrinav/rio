@@ -104,7 +104,7 @@ struct Async_handle {
                 } else {
                     ptr->future_dropped = true;
                     if (ptr->ctx && ptr->cancel_on_drop) {
-                        ptr->ctx->cancel_request(&ptr->header);
+                        ptr->ctx->token_for(ptr->header).cancel();
                     }
                 }
             }
@@ -125,7 +125,7 @@ struct Async_handle {
         } else {
             ptr->future_dropped = true;
             if (ptr->ctx && ptr->cancel_on_drop) {
-                ptr->ctx->cancel_request(&ptr->header);
+                ptr->ctx->token_for(ptr->header).cancel();
             }
         }
     }
@@ -140,7 +140,7 @@ struct Async_handle {
         if (!ptr || ptr->io_done) {
             return;
         }
-        ptr->ctx->cancel_request(&ptr->header);
+        ptr->ctx->token_for(ptr->header).cancel();
     }
 
     void cancel_after(std::chrono::steady_clock::time_point deadline)
@@ -148,7 +148,7 @@ struct Async_handle {
         if (!ptr || ptr->io_done) {
             return;
         }
-        ptr->ctx->schedule_cancel(deadline, &ptr->header);
+        ptr->ctx->token_for(ptr->header).cancel_after(deadline);
     }
 
     friend void tag_invoke(rio::tag_invoke_impl::cancel_after_t, Async_handle &h, std::chrono::steady_clock::time_point d)

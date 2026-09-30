@@ -16,6 +16,13 @@ export struct uring_request_header {
 
 }; // namespace internals
 
+// Opaque handle to a live operation's cancellation identity. Minted only
+// from a uring_request_header reference (which users can never obtain),
+// so a token always names a real op — never a fabricated pointer — and
+// the cancel operations live on the token itself, making wrong-context
+// cancels unrepresentable: you address the op, the token knows its ring.
+export struct cancel_token;
+
 export struct context {
     io_uring ring{};
     static constexpr std::size_t pool_alignment = alignof(std::max_align_t);
@@ -41,13 +48,13 @@ export struct context {
         void (*destroy)(void *);
     };
 
-    struct cancel_entry {
+    struct cancel_entry
+    {
         std::chrono::steady_clock::time_point deadline;
         void *target;
     };
 
     std::vector<tombstone> graveyard;
-    std::vector<cancel_entry> cancellations_;
     std::array<pool_bucket, bucket_sizes.size()> op_buckets_{};
     bool has_pending_submit_ = false;
     unsigned queued_sqes_ = 0;
@@ -116,21 +123,32 @@ export struct context {
         }
         return *this;
     }
-    void cancel_request(void *original_user_data)
+    // The single mint for cancel_token: proves (by type) that the
+    // target is a live op header rather than an arbitrary pointer.
+    auto token_for(internals::uring_request_header &h) -> cancel_token;
+
+  private:
+    friend struct cancel_token;
+
+    std::vector<cancel_entry> cancellations_;
+
+    // Raw-pointer core below is an implementation detail: all public
+    // cancellation flows through cancel_token.
+    void cancel_ptr(void *target)
     {
         auto sqe = this->sqe();
         if (!sqe) {
             return;
         }
 
-        io_uring_prep_cancel(sqe, original_user_data, 0);
+        io_uring_prep_cancel(sqe, target, 0);
 
         io_uring_sqe_set_data(sqe, nullptr);
 
         this->submit();
     }
 
-    void schedule_cancel(std::chrono::steady_clock::time_point deadline, void *target)
+    void schedule_ptr(std::chrono::steady_clock::time_point deadline, void *target)
     {
         auto it = std::ranges::upper_bound(cancellations_, deadline, std::ranges::less{}, &cancel_entry::deadline);
         cancellations_.insert(it, cancel_entry{deadline, target});
@@ -140,6 +158,8 @@ export struct context {
     {
         std::erase_if(cancellations_, [target](const cancel_entry &e) { return e.target == target; });
     }
+
+  public:
 
     void fire_due_cancellations()
     {
@@ -400,5 +420,44 @@ private:
         }
     }
 };
+
+export struct cancel_token
+{
+    // Best-effort kernel cancel of the op, right now. Silently skips when
+    // the ring is full (same as the old cancel_request).
+    void cancel()
+    {
+        owner_->cancel_ptr(target_);
+    }
+
+    // Queue a kernel cancel for the op at the given deadline.
+    void cancel_after(std::chrono::steady_clock::time_point deadline)
+    {
+        owner_->schedule_ptr(deadline, target_);
+    }
+
+    // Drop a scheduled cancel for the op, if any is still queued.
+    void disarm()
+    {
+        owner_->remove_pending_cancellations(target_);
+    }
+
+    // No default token: one always names a real op on a real context.
+    // Copying is fine — a token is a non-owning identity, not ownership.
+
+  private:
+    rio::context *owner_;
+    void *target_;
+
+    cancel_token(rio::context *owner, void *target) : owner_(owner), target_(target)
+    {}
+
+    friend struct context;
+};
+
+inline auto context::token_for(internals::uring_request_header &h) -> cancel_token
+{
+    return {this, &h};
+}
 
 } // namespace rio
